@@ -289,6 +289,248 @@ class Benchmark:
         print(f"Data collection finished! Results are saved in the subfolder {name_results}.")
 
 
+    def continue_data_collection(self, filename_labelled, objectives, objective_mode, copy_rounds, remaining_budget, batches, 
+            Vendi_pruning_fractions, seeds, name_results, name_prior_results, init_sampling_method, sample_threshold = None, enforce_dissimilarity=False, pruning_metric = "vendi", acquisition_function_mode = 'balanced', 
+            dft_filename = None, filename_prediction = "df_benchmark.csv", directory='.'):
+        """
+        Takes the first n rounds from a different run and continues them with the indicated settings. Otherwise, the same as collect_data().
+        See the docstring of collect_data() for full details on the generated reports and most variables.
+        NOTE: The function only works with the folder name_prior_results only contains one run (with different seeds)!
+        -------------------------------------------------------------------------------------
+        Additional parameters compared to collect_data():
+
+        copy_rounds: int
+            number of rounds to take from the previous run (meaning all rounds until the indicated one)
+        remaining_budget: int
+            number of experiments to be added in this run
+        name_results: string
+            name for saving the generated results
+        name_prior_results: str
+            name of the folder from which results are read in
+        """
+        
+        wdir = Path(directory)
+        # Create the results folder and the folder for raw results.
+        if not os.path.exists(wdir.joinpath(name_results)):
+            # Create the folder
+            os.makedirs(wdir.joinpath(name_results))
+        if not os.path.exists(wdir.joinpath(name_results+"/raw_data")):
+            # Create the folder
+            os.makedirs(wdir.joinpath(name_results+"/raw_data"))
+
+        # Read labelled data.
+        df_labelled = pd.read_csv(wdir.joinpath(filename_labelled),index_col=0,header=0, float_precision = "round_trip")
+
+        # Generate a copy of the DataFrame with labelled data and remove the objective data. NOTE: only implemented for single objective benchmarks.
+        df_unlabelled = df_labelled.copy(deep=True)
+        df_unlabelled.drop(columns=[objectives[0]],inplace=True)
+
+        # Instantiate empty for the analyzed results.
+        Vendi_names = [str(x) for x in Vendi_pruning_fractions]
+        batch_names = [str(x) for x in batches]
+        df_obj_av = pd.DataFrame(None,batch_names,Vendi_names)
+        df_obj_stdev = pd.DataFrame(None,batch_names,Vendi_names)
+        df_vendi_av = pd.DataFrame(None,batch_names,Vendi_names)
+        df_vendi_stdev = pd.DataFrame(None,batch_names,Vendi_names)
+
+        # Instantiate a ScopeBO object
+        myScopeBO = ScopeBO()
+
+        # Set the name for the file used in the benchmarking runs.
+        csv_filename_pred = wdir.joinpath(filename_prediction)
+
+        # In case of non-DFT featurization, set up some other things to get a DFT-featurization-based vendi score.
+        vendiScopeBO = None
+        df_dft = None
+        filename_vendi = None
+        current_df_dft = None
+        if dft_filename:
+            filename_vendi = filename_prediction.replace(".csv","_vendi.csv")
+            df_dft = pd.read_csv(wdir.joinpath(dft_filename),index_col=0,header=0, float_precision = "round_trip")
+            df_dft[objectives[0]] = "PENDING"
+            vendiScopeBO = ScopeBO()
+            
+        # Run all the requested parameter settings.
+        run_counter = 1  # variable for feedback during run
+        total_runs = len(batches) * len(Vendi_pruning_fractions) * seeds  # same
+        for batch in batches: 
+            for Vendi_pruning_fraction in Vendi_pruning_fractions:
+                
+                seeded_list_obj = []
+                seeded_list_vendi = []
+
+                for seed in range(seeds): 
+
+                   current_df = df_unlabelled.copy(deep=True)
+
+                    # read in the prior results with the correct seed
+                    prior_run_name = None
+                    for filename in os.listdir(wdir.joinpath(name_prior_results+"/raw_data/")):
+                        if f"s{seed}" in filename:  # check for the file with the correct seed by using naming convention
+                            prior_run_name = filename
+                    df_prior_data = pd.read_csv(wdir.joinpath(name_prior_results+"/raw_data/"+prior_run_name),index_col=0,header=0, float_precision = "round_trip")
+                                                            
+                    # process this df
+                    df_prior_data["eval_samples"] = df_prior_data["eval_samples"].apply(lambda x: [y.strip("'") for y in x[1:-1].split(', ')])
+                    df_prior_data["cut_samples"] = df_prior_data["cut_samples"].apply(lambda x: [y.strip("'") for y in x[1:-1].split(', ')])
+
+                    # collect the selected samples for all requested rounds
+                    prior_selected = [smiles.encode().decode('unicode_escape') for round_list in [df_prior_data.loc[round,"eval_samples"] for round in df_prior_data.index[:copy_rounds]] for smiles in round_list]
+
+                    # same for the pruned samples
+                    prior_cut = [smiles.encode().decode('unicode_escape') for round_list in [df_prior_data.loc[round,"cut_samples"] for round in df_prior_data.index[:copy_rounds]] for smiles in round_list]
+
+                    # typically there is no pruning in the first round of experiments (initiation), resulting in the list containing an empty element
+                    if "" in prior_cut:
+                        prior_cut.remove("")
+
+                    # assign the priorities in the dataframe
+                    current_df["priority"] = 0
+                    current_df.loc[prior_selected,"priority"] = -2
+                    current_df.loc[prior_cut,"priority"] = -1
+
+                    # assign the objective values in the dataframe
+                    current_df[objectives[0]] = "PENDING"
+                    for idx in prior_selected:
+                        current_df.loc[idx,"rate"] = df_labelled.loc[idx,"rate"]
+
+                    current_df.to_csv(csv_filename_pred, index=True, header=True)
+                    if df_dft is not None:
+                        current_df_dft = df_dft.copy(deep=True)  # reset the dft-feautrized df for the vendi calculation
+                    
+                    # Set up lists to hold raw results and average results for this run.
+                    raw_results = []
+                    run_results = []
+                    
+                    # Determine the number of rounds of experiments for the given batch size.
+                    rounds = 0
+                    if type(batch) is list:
+                        rounds = len(batch)
+                    else:
+                        if remaining_budget % batch != 0:
+                            rounds = int(remaining_budget/batch)+1 # extra round with reduced batch size for last run (will be reduced below)
+                        
+                        else:
+                            rounds = int(remaining_budget/batch)
+                    
+                    # Run ScopeBO for these settings.
+                    for round in range(rounds):
+                            
+                        # check if the batch sie is dynamic (meaning different batch sizes for each rounds)
+                        current_batch = None
+                        if type(batch) is list:
+                            current_batch = batch[round]
+                        else:
+                            current_batch = batch
+                            # Check if this will be a run with reduced batch size (due to the set budget).
+                            if round+1 == rounds and _remaining_budget % batch != 0:
+                                current_batch = remaining_budget % batch
+
+                        # Check if the Vendi_pruning_fraction is dynamic (meaning different fractions for each round)
+                        this_Vendi_pruning_fraction = None
+                        if type(Vendi_pruning_fraction) is list:
+                            this_Vendi_pruning_fraction = Vendi_pruning_fraction[round]
+                        else:
+                            this_Vendi_pruning_fraction = Vendi_pruning_fraction
+
+                        print(f"Now running Batch size: {batch}, Vendi_pruning_fraction: {this_Vendi_pruning_fraction}, Seed: {seed}, Round: {round}, current batch: {current_batch}")
+                        with HiddenPrints():
+                            current_df = myScopeBO.run(
+                                objectives = objectives,
+                                objective_mode= objective_mode,
+                                filename = filename_prediction,
+                                batch = current_batch,
+                                init_sampling_method = init_sampling_method,
+                                seed = seed,
+                                Vendi_pruning_fraction = this_Vendi_pruning_fraction,
+                                pruning_metric = pruning_metric,
+                                acquisition_function_mode = acquisition_function_mode,
+                                give_alternative_suggestions = False,
+                                show_suggestions=False,
+                                sample_threshold=sample_threshold,
+                                enforce_dissimilarity=enforce_dissimilarity
+                            )
+                        
+                        current_raw_results = []
+
+                        # Save indices of samples.
+                        current_idx_samples = list(current_df[current_df["priority"]  == 1].index)
+
+                        # Update dataframe with results and save the objective values.
+                        current_obj = []
+                        for idx in current_idx_samples:
+                            current_df.loc[idx,objectives[0]] = df_labelled.loc[idx,objectives[0]]  # NOTE: there is only one objective in the benchmarking dataset
+                            current_obj.append(df_labelled.loc[idx,objectives[0]])
+
+                        # Save the dataframe for the next round of ScopeBO.
+                        current_df.to_csv(csv_filename_pred, index=True, header=True)
+
+                        # Calculate the Vendi score for all points that were obseved so far.
+                        if vendiScopeBO:  # this is the scenario when a non-dft featurizatio is used in the campaign
+                            for idx in current_idx_samples:
+                                current_df_dft.loc[idx,objectives[0]] = df_labelled.loc[idx,objectives[0]]
+                            current_df_dft.to_csv(wdir.joinpath(filename_vendi),index=True,header=True)
+                            current_vendi_score = vendiScopeBO.get_vendi_score(objectives = objectives, 
+                                                                            directory = directory, filename = filename_vendi)
+                            print("Vendi score calculated via additional file with dft.")                              
+                        else:  # this is the standard case for a campaign using dft featurization
+                            current_vendi_score = myScopeBO.get_vendi_score(objectives = objectives, directory = directory, filename = filename_prediction)
+
+                        # Get the newly pruned samples by looking up all pruned samples and removing the ones that were already pruned.
+                        current_idx_cut = list(current_df[current_df["priority"]  == -1].index)
+                        for i in range(round):  # loop through the previously saved batches.
+                            for j in raw_results[i][3]:  # cut samples are saved as the 4th entry in each current_results list
+                                current_idx_cut.remove(j)
+
+                        # Save results for this round in a list and append it to the overall results list.
+                        current_raw_results.append(current_obj)
+                        current_raw_results.append(current_vendi_score)
+                        current_raw_results.append(current_idx_samples)
+                        current_raw_results.append(current_idx_cut)
+                        raw_results.append(current_raw_results)
+
+                        # Average the objective value for all samples in this round.
+                        current_obj_av = sum(current_obj)/len(current_obj)
+
+                        # Save the processed results for this round.
+                        run_results.append([current_obj_av,current_vendi_score])
+
+                    # Save the processed results for this run.
+                    seeded_list_obj.append([run_results[i][0] for i in range(len(run_results))])
+                    seeded_list_vendi.append([run_results[i][1] for i in range(len(run_results))])
+                    
+                    # Save raw results as a csv.
+                    df_results = pd.DataFrame(raw_results,columns=["obj_values","Vendi_score","eval_samples","cut_samples"])
+                    csv_filename_results = wdir.joinpath(name_results+f"/raw_data/{len(prior_selected)}+{remaining_budget}{acquisition_function_mode}_s{seed}_b{batch}_V{Vendi_pruning_fraction}.csv")
+
+                    df_results.to_csv(csv_filename_results,index=True,header=True)
+
+                    print (f"Finished campaign {run_counter} of {total_runs}.")
+                    run_counter+= 1
+                
+                # Calculate the averages and standard deviations across the differents seeds and save the results.
+                df_obj_av.loc[str(batch),str(Vendi_pruning_fraction)]  = str([sum(i) / len(i) for i in zip(*seeded_list_obj)])
+                # Standard deviation can only be calculated if there are more than 2 values. Set to zero if there is only one.
+                if seeds > 1:
+                    df_obj_stdev.loc[str(batch),str(Vendi_pruning_fraction)]  = str([stdev(i) for i in zip(*seeded_list_obj)])
+                    df_vendi_stdev.loc[str(batch),str(Vendi_pruning_fraction)]  = str([stdev(i) for i in zip(*seeded_list_vendi)])
+                else:
+                    df_obj_stdev.loc[str(batch),str(Vendi_pruning_fraction)]  = str([0 for i in zip(*seeded_list_obj)])
+                    df_vendi_stdev.loc[str(batch),str(Vendi_pruning_fraction)]  = str([0 for i in zip(*seeded_list_vendi)])  
+
+                df_vendi_av.loc[str(batch),str(Vendi_pruning_fraction)]  = str([sum(i) / len(i) for i in zip(*seeded_list_vendi)])
+
+
+
+        # Save the dataframes with the processed results as csv files.        
+        df_obj_av.to_csv(wdir.joinpath(name_results+"/benchmark_obj_av.csv"),index=True,header=True)
+        df_obj_stdev.to_csv(wdir.joinpath(name_results+"/benchmark_obj_stdev.csv"),index=True,header=True)
+        df_vendi_av.to_csv(wdir.joinpath(name_results+"/benchmark_vendi_av.csv"),index=True,header=True)
+        df_vendi_stdev.to_csv(wdir.joinpath(name_results+"/benchmark_vendi_stdev.csv"),index=True,header=True)
+
+        print(f"Data collection finished! Results are saved in the subfolder {name_results}.")
+
+
     def heatmap_plot(self,type_results, name_results, budget, filename=None, scaling="normalization", directory = '.'):
         """
         Generates and saves a heatmap plot for the requested result type across different batch sizes and Vendi_pruning_fractions.
