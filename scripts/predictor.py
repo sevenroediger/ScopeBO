@@ -238,12 +238,12 @@ class ScopeBO:
         return df
     
     def run(self,
-            objectives, objective_mode, objective_thresholds=None,
+            objectives, objective_mode, objective_weights=None,
             directory='.', filename='reaction_space.csv',
-            batch=3, init_sampling_method='cvt', seed=42,
-            Vendi_pruning_fraction=10,  # NOTE: change the defaults once optimized.
-            pruning_metric = "vendi",
-            acquisition_function_mode='balanced',
+            batch=3, init_sampling_method='random', seed=42,
+            Vendi_pruning_fraction=12,  # NOTE: change the defaults once optimized.
+            pruning_metric = "vendi_sample",
+            acquisition_function_mode='greedy',
             give_alternative_suggestions=True,
             show_suggestions=True,
             sample_threshold=None,
@@ -267,11 +267,11 @@ class ScopeBO:
                     objective_mode = ['max']
                 B) Example for multi-objective optimization:
                     objective_mode = ['max', 'min', 'min']
-        objective_thresholds: list
-            List of worst case values for each objective.
-            Example:
-                objective_threshold = [50.0, 10.0, 10.0]
-            Default: None     
+        objective_weights: list
+            list of float weights for the scalarization of the objectives 
+            only relevant for multi-objective greedy runs, not other acquisition functions
+            NOTE: add the final name of the function
+            Default: None (objectives will be averaged)
         directory: string
             name of the directory to save the results of the optimization.
             Default is the current directory
@@ -335,6 +335,22 @@ class ScopeBO:
             objectives = [objectives]
         if type(objective_mode) != list:
             objective_mode = [objective_mode]
+
+        
+        # Check if the objective modes were provided correctly
+        msg = "Each objective mode must be either 'max' for maximization or 'min' for minimization. Please check your input."
+        assert (all(mode.lower() in {"max", "min"} for mode in objective_mode)),msg
+
+        # Assert that the number of objectives and objective modes matches
+        msg = "The number of objective modes and objectives does not match. Please check your input."
+        assert (len(objectives) == len(objective_mode)),msg
+
+        # Assert that the correct number of weights are given if they are provided
+        if objective_weights is not None:
+            msg = "The number of objective weights does not match the number of objectives. Please check your input."
+            assert (len(objective_weights) == len(objectives)),msg
+            # make sure the weights are all floats
+            objective_weights = [float(weight) for weight in objective_weights]
 
         # Check that the reaction space table exists.
         msg = "Reaction space was not found. Please create one and provide it as input (csv file)."
@@ -453,7 +469,7 @@ class ScopeBO:
                 batch=batch,
                 objectives=objectives,
                 objective_mode=objective_mode,
-                objective_thresholds=objective_thresholds,
+                objective_weights = objective_weights,
                 seed=seed,
                 Vendi_pruning_fraction=Vendi_pruning_fraction,
                 pruning_metric = pruning_metric,
@@ -480,7 +496,7 @@ class ScopeBO:
         return original_df
 
 
-    def _model_run(self, df, batch, objectives, objective_mode, objective_thresholds, 
+    def _model_run(self, df, batch, objectives, objective_mode, objective_weights,
                    seed, Vendi_pruning_fraction, pruning_metric, acquisition_function_mode,
                    full_covariance_matrix,give_alternative_suggestions,sample_threshold,enforce_dissimilarity):
         """
@@ -502,7 +518,7 @@ class ScopeBO:
         full_covariance_matrix: DataFrame
             covariance matrix of the full dataset
         
-        objective_mode, objective_thresholds, seed, Vendi_pruning_fraction,
+        objective_mode, seed, Vendi_pruning_fraction,
         pruning_metric, give_alternative_suggestions:
             see doc string for run function above.
         """
@@ -675,29 +691,7 @@ class ScopeBO:
 
                         # Reference point is the minimum seen so far (important for hypervolume calculation).
                         ref_mins = np.min(cumulative_train_y, axis=0)
-                        # no threshold values for the objectives were provided. ref_point =  ref_min.
-                        if objective_thresholds is None:
-                            ref_point = torch.tensor(ref_mins).double().to(**tkwargs)
-                        # reference points for thresholds were provided - adjust ref_min
-                        else:
-                            ref_point_np = np.zeros(n_objectives)
-                            for i in range(0, n_objectives):
-                                if objective_thresholds[i] is None:
-                                    ref_point_np[i] = ref_mins[i]
-                                else:
-                                    ref_point_np[i] = objective_thresholds[i]
-                                    if objective_mode[i].lower() == 'min':
-                                        ref_point_np[i] = -ref_point_np[i]
-                                        
-                            # Scale.
-                            ref_point_np = scaler_y.transform(np.array([ref_point_np]))
-                            
-                            # Loop again to update values for objectives without threshold (so far set to 0).
-                            for i in range(0, n_objectives):
-                                if objective_thresholds[i] is None:
-                                    ref_point_np[0][i] = ref_mins[i]
-                            # convert to tensor
-                            ref_point = torch.tensor(ref_point_np[0]).double().to(**tkwargs)
+                        ref_point = torch.tensor(ref_mins).double().to(**tkwargs)
 
                         # Generate acquisition function object. 
                         # Warnings ignored because it automatically generated a non-consequential numerical warning for added jitter of ca. 10^-8 otherwise.
