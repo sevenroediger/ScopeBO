@@ -391,23 +391,38 @@ class Benchmark:
                     if "" in prior_cut:
                         prior_cut.remove("")
 
+                    # get the previously measured objective values
+                    prior_obj = list(df_labelled.loc[df_labelled.index.isin(prior_selected),objectives[0]])
+
                     # assign the priorities in the dataframe
                     current_df["priority"] = 0
                     current_df.loc[prior_selected,"priority"] = -2
                     current_df.loc[prior_cut,"priority"] = -1
 
+                    # Set up lists to hold raw results and average results for this run.
+                    raw_results = []
+                    run_results = []
+
+                    # Save the prior results in a list and append it to the overall results list.
+                    current_raw_results = []
+                    current_raw_results.append(prior_obj)
+                    current_raw_results.append(df_prior_data.loc[copy_rounds-1,"Vendi_score"])
+                    current_raw_results.append(prior_selected)
+                    current_raw_results.append(prior_cut)
+                    raw_results.append(current_raw_results)
+                    prior_obj_av = sum(prior_obj)/len(prior_obj)
+
+                    # Save the processed results for this round.
+                    run_results.append([prior_obj_av,df_prior_data.loc[copy_rounds-1,"Vendi_score"]])
+
                     # assign the objective values in the dataframe
                     current_df[objectives[0]] = "PENDING"
                     for idx in prior_selected:
-                        current_df.loc[idx,"rate"] = df_labelled.loc[idx,"rate"]
+                        current_df.loc[idx,objectives[0]] = df_labelled.loc[idx,objectives[0]]
 
                     current_df.to_csv(csv_filename_pred, index=True, header=True)
                     if df_dft is not None:
                         current_df_dft = df_dft.copy(deep=True)  # reset the dft-feautrized df for the vendi calculation
-                    
-                    # Set up lists to hold raw results and average results for this run.
-                    raw_results = []
-                    run_results = []
                     
                     # Determine the number of rounds of experiments for the given batch size.
                     rounds = 0
@@ -458,6 +473,7 @@ class Benchmark:
                                 enforce_dissimilarity=enforce_dissimilarity
                             )
                         
+                        # reset the list to hold the raw results for this round
                         current_raw_results = []
 
                         # Save indices of samples.
@@ -472,7 +488,7 @@ class Benchmark:
                         # Save the dataframe for the next round of ScopeBO.
                         current_df.to_csv(csv_filename_pred, index=True, header=True)
 
-                        # Calculate the Vendi score for all points that were obseved so far.
+                        # Calculate the Vendi score for all points that were observed so far.
                         if vendiScopeBO:  # this is the scenario when a non-dft featurizatio is used in the campaign
                             for idx in current_idx_samples:
                                 current_df_dft.loc[idx,objectives[0]] = df_labelled.loc[idx,objectives[0]]
@@ -485,9 +501,9 @@ class Benchmark:
 
                         # Get the newly pruned samples by looking up all pruned samples and removing the ones that were already pruned.
                         current_idx_cut = list(current_df[current_df["priority"]  == -1].index)
-                        for i in range(round):  # loop through the previously saved batches.
+                        for i in range(round+1):  # loop through the previously saved batches. (plus one because results from prior run have been saved before round 0 of the run)
                             for j in raw_results[i][3]:  # cut samples are saved as the 4th entry in each current_results list
-                                current_idx_cut.remove(j)
+                                current_idx_cut.remove(j)                      
 
                         # Save results for this round in a list and append it to the overall results list.
                         current_raw_results.append(current_obj)
