@@ -639,7 +639,7 @@ class Benchmark:
             heatmap_figure.savefig(wdir.joinpath(filename))
 
 
-    def progress_plot(self,budget,type_results, name_results,filename_figure = None, scaling="normalization", directory="."):
+    def progress_plot(self,budget,type_results, name_results,filename_figure = None, scaling="normalization", directory=".",show_plot=True):
         """
         Generates a result(round) y(x)-plot for the requested results.
 
@@ -686,7 +686,7 @@ class Benchmark:
                 if type(batch) is not str:  # case using a fixed batch size
                     batch_sizes = [batch]*len(data.loc[batch,Vendi_pruning_fraction])
                     difference = budget - sum(batch_sizes)
-                    batch_sizes[-1] -= difference  # reduce the last batch if it was smaller due to budget constraints
+                    batch_sizes[-1] += difference  # reduce the last batch if it was smaller due to budget constraints
                 else:  # case using different batch sizes in each round
                     batch_sizes = ast.literal_eval(batch)  # list with the batch sizes for each round
                 batch_sizes_list.append(batch_sizes)
@@ -737,14 +737,15 @@ class Benchmark:
                 scaled_data.iloc[nr_experiments[entry]-1, column_nr] = unscaled_data.iloc[entry,column_nr]  # -1 because iloc is 0-indexed
 
         # Plot and save the figure if requested.
-        plt.figure(figsize=(10,10))
-        plot = sns.lineplot(data=scaled_data)
-        plt.xlabel('Number of selected samples')
-        plt.ylabel(f"{type_results} score")
-        plt.show()
-        if filename_figure is not None:
-            figure = plot.get_figure()
-            figure.savefig(wdir.joinpath(filename_figure))
+        if show_plot:
+            plt.figure(figsize=(10,10))
+            plot = sns.lineplot(data=scaled_data)
+            plt.xlabel('Number of selected samples')
+            plt.ylabel(f"{type_results} score")
+            plt.show()
+            if filename_figure is not None:
+                figure = plot.get_figure()
+                figure.savefig(wdir.joinpath(filename_figure))
 
 
         return scaled_data.dropna(how="all")  # return the data
@@ -1005,5 +1006,109 @@ class Benchmark:
             return (score-vendi_mean)/(vendi_std)  # shifted to avoid negative values
         else:
             return print("No valid type provided for the normalization!")
+        
+
+    @staticmethod
+    def results_for_run_conti(budget,type_results, name_results,scaling="normalization", scale_to_exp=True,directory="."):
+        """
+        Adapted version of progress_plot() to get the progress of the different metrics for a continue_data_collection() run.
+        NOTE: Only works if there is just one run (can have multiple seeds) in the name_results folder.
+        -------------------------
+        name_results: str
+            folder with results to be analyzed
+        budget: int
+            scope size
+        type_results: str
+            type of results to be displayed
+            options: "scope" (scope score), "vendi" (Vendi score), "objective" (objective score)
+        scale_to_exp: Boolean
+            option to display the results by round (False) or number of experiments (True; Default)
+        directory: str
+            working directory. Default is current directory (".")
+        """
+
+        wdir = Path(directory)
+            
+        # Read in the required data.
+        if (("obj" in type_results.lower()) or ("scope" in type_results.lower())):
+            data = pd.read_csv(wdir.joinpath(name_results+"/benchmark_obj_av.csv"),index_col=0,header=0)
+            data = data.applymap(lambda x: ast.literal_eval(x))
+            if "scope" in type_results.lower():
+                data2 = pd.read_csv(wdir.joinpath(name_results+"/benchmark_vendi_av.csv"),index_col=0,header=0, float_precision = "round_trip")
+                data2 = data2.applymap(lambda x: ast.literal_eval(x))
+        if "vendi" in type_results.lower():
+            data = pd.read_csv(wdir.joinpath(name_results+"/benchmark_vendi_av.csv"),index_col=0,header=0, float_precision = "round_trip")
+            data = data.applymap(lambda x: ast.literal_eval(x))
+        
+        index_list = []
+        results_list = []
+        results_list2 = []
+        batch_sizes_list = []
+
+        # Go through the results and analyze them.
+        for batch in data.index:
+            for Vendi_pruning_fraction in data.columns:
+                index_string = "b"+str(batch)+"_V"+str(Vendi_pruning_fraction)
+                index_list.append(index_string)
+
+                # define the batch sizes
+                batch_sizes = [batch]*len(data.loc[batch,Vendi_pruning_fraction])
+                # redefine the first batch (these are the prior samples) based on the name of the individual runs
+                batch_sizes[0] = int(os.listdir(wdir.joinpath(name_results+"/raw_data/"))[0].split("+")[0])
+                difference = budget - sum(batch_sizes)
+                batch_sizes[-1] += difference  # reduce the last batch if it was smaller due to budget constraints
+                batch_sizes_list.append(batch_sizes)
+
+                processed_data = []
+                processed_data2 = []
+
+                if (("obj" in type_results.lower()) or ("scope" in type_results.lower())):
+                    unprocessed_obj = data.loc[batch,Vendi_pruning_fraction]  # these are the average yields per round, not for all experiments until this round!
+                    processed_data = []
+                    processed_data2 = []
+                    total_obj = [i*j for i,j in zip(batch_sizes,unprocessed_obj)]  # [batch size]*[average obj] for each round
+                    for round in range(len(unprocessed_obj)):
+                        processed_result = sum(total_obj[:(round+1)]) / sum(batch_sizes[:(round+1)])
+                        processed_data.append(processed_result)
+
+                    if "scope" in type_results.lower():
+                        processed_data2 = data2.loc[batch,Vendi_pruning_fraction]
+
+                elif "vendi" in type_results.lower():
+                    processed_data = data.loc[batch,Vendi_pruning_fraction]
+                results_list.append(processed_data)
+                results_list2.append(processed_data2)
+
+        unscaled_data = pd.DataFrame(results_list,index_list).T
+        unscaled_data2 = None
+
+        if "scope" in type_results.lower():
+            unscaled_data2 = pd.DataFrame(results_list2,index_list).T
+
+            # Scale the dataframes for the calculation of the scope score (using the experimentally determined bounds).
+            if scaling.lower() == "normalization":
+                unscaled_data2 = unscaled_data2.applymap(lambda x: normalization(score=x,type="vendi"))
+                unscaled_data = unscaled_data.applymap(lambda x: normalization(score=x,type="obj"))
+            else:
+                return print("No valid scaling metric provided.")
+            unscaled_data = unscaled_data * unscaled_data2
+
+        if scale_to_exp:
+            #  The data is currently shown per batch (which can be different for the different runs). Still needs to be "scaled" to the number of experiments. 
+            scaled_data = pd.DataFrame(np.nan,[x+1 for x in range(budget)],unscaled_data.columns)  # create empty dataframe with the right shape
+            for column_nr in range(len(unscaled_data.columns)):
+                batch_sizes = batch_sizes_list[column_nr]  # batch sizes for each round
+                nr_experiments = [sum(batch_sizes[:round+1]) for round in range(len(batch_sizes))]  # total number of experiments including for each round
+                for entry in range(len(unscaled_data.index)):
+                    scaled_data.iloc[nr_experiments[entry]-1, column_nr] = unscaled_data.iloc[entry,column_nr]  # -1 because iloc is 0-indexed
+
+            return scaled_data  # return the data
+        
+        else:
+            prior_rounds = 10-int(name_results.split("/")[-1][5])
+            recorded_rounds = len(unscaled_data.index)
+            unscaled_data.index = range(prior_rounds,prior_rounds+recorded_rounds)
+            return unscaled_data
+
 
     
