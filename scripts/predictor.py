@@ -803,8 +803,8 @@ class ScopeBO:
 
                     # run the acquisition function
                     idx_sample, sample, list_position_sample = greedy_run(
-                        surrogate_model=surrogate_model, q=acquisition_samples, objective_mode=objective_mode, idx_test=idx_test, 
-                        test_x_torch=test_x_torch)
+                        surrogate_model=surrogate_model, q=acquisition_samples, objective_weights=objective_weights,
+                        objective_mode=objective_mode, idx_test=idx_test, test_x_torch=test_x_torch)
                     
                     # Update batch fantasy.
                     idx_test = np.delete(idx_test, list_position_sample[0])

@@ -53,12 +53,16 @@ def explorative_run(surrogate_model, q, idx_test, test_x_torch):
 
 def greedy_run(surrogate_model, q, objective_mode, idx_test, test_x_torch):
     """
-    Fully exploitative acqusition function. Currently only implemented for mono-objective runs.
+    Fully exploitative acqusition function.
     Input:
         surrogate_model: surrogate model object
             The surrogate model to be used.
         q: int
             batch size
+        objective_weights: list of float
+            list with weights for the objectives in the scalarization (only multi-obj. opt.)
+        objective_mode: list of str
+            list with the modes of the individual objectives (maximization or minimization)
         idx_test: list
             list of test indices
         test_x_torch: tensor
@@ -67,16 +71,31 @@ def greedy_run(surrogate_model, q, objective_mode, idx_test, test_x_torch):
     Returns the indices of the selected samples, their data, and their list position in the test data lists.
     """
 
-    means = surrogate_model.posterior(test_x_torch).mean.detach().numpy()
+    tkwargs = {"dtype": torch.double, "device": torch.device("cpu")}
+
+    # get the surrogate means
+    means = surrogate_model.posterior(test_x_torch).mean
+
+    # check for minimization tasks and adjust values if so
+    # sign change converts minimization problems to pseudo-maximization problem for the algorithm
+    obj_sign = [-1.0 if mode.lower() == "min" else 1.0 for mode in objective_mode]
+    means = means * torch.tensor(obj_sign).to(**tkwargs).double()
+
+    # scalarization in case of multi-objective optimization
+    if len(obj_sign) > 1:
+        # use the provided weights or otherwise average the predicted means
+        if objective_weights is not None:
+            objective_weights = torch.tensor(objective_weights).to(**tkwargs).double()
+            means = (means * objective_weights).sum(dim=-1)
+        else:
+            means = means.mean(dim=-1)
+        
+    # convert to numpy array
+    means_np = means.detach().numpy()
 
     # sort the posterior means
-    sorted_means = means.tolist().copy()
-    if objective_mode[0].lower() == "max":
-        sorted_means.sort(reverse=True)
-    elif objective_mode[0].lower() == "min":
-        sorted_means.sort(reverse=False)
-    else:
-        print("No valid objective mode ('max' or 'min') given. Please check your input and run again.")
+    sorted_means = means_np.tolist().copy()
+    sorted_means.sort(reverse=True)
 
     # only keep the top scores (= batch size)
     selected_means = sorted_means[:q]
@@ -84,9 +103,9 @@ def greedy_run(surrogate_model, q, objective_mode, idx_test, test_x_torch):
     # determine the list indices that belong to these mean scores
     list_positions_selected_means = []
     for current_means in selected_means:
-        position = [i for i,x in enumerate(list(means)) if x == current_means]
+        position = [i for i,x in enumerate(list(means_np)) if x == current_means]
 
-        # add the positions of all list occurances of the selected variances to the position list
+        # add the positions of all list occurances of the selected means to the position list
         for k in range(len(position)):
                 if len(list_positions_selected_means) < q:
                     list_positions_selected_means.append(position[k])
@@ -97,7 +116,6 @@ def greedy_run(surrogate_model, q, objective_mode, idx_test, test_x_torch):
     for position in list_positions_selected_means:
         best_samples.append(idx_test[position])
         samples.append(test_x_torch.detach().numpy().tolist()[position])
-
 
     return best_samples, samples, list_positions_selected_means
 
