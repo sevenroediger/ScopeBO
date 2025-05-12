@@ -6,14 +6,16 @@ import torch
 from .model import build_and_optimize_model
 
 
-def explorative_run(surrogate_model, q, idx_test, test_x_torch):
+def explorative_run(surrogate_model, q,objective_weights,idx_test, test_x_torch):
     """
-    Fully explorative acquisition function solely for benchmarking purpose. Only works for mono-objective optimization.
+    Fully explorative acquisition function solely for benchmarking purpose.
     Input:
         surrogate_model: surrogate model object
             The surrogate model to be used.
         q: int
             batch size
+        objective_weights: list of floats
+            lists of the weights to be used for the scalarization in multi-obj. optimization
         idx_test: list
             list of test indices
         test_x_torch: tensor
@@ -22,10 +24,22 @@ def explorative_run(surrogate_model, q, idx_test, test_x_torch):
     Returns the indices of the selected samples, their data, and their list position in the test data lists.
     """
 
-    variance = surrogate_model.posterior(test_x_torch).variance.detach().numpy()
+    variance = surrogate_model.posterior(test_x_torch).variance
+
+    # scalarization in case of multi-objective optimization
+    if type(variance[0].detach().tolist()) is list:  # for mono-objective, the type would be float
+        # use the provided weights or otherwise average the predicted variance
+        if objective_weights is not None:
+            objective_weights = torch.tensor(objective_weights).to(**tkwargs).double()
+            variance = (variance * objective_weights).sum(dim=-1)
+        else:
+            variance = variance.mean(dim=-1)
+
+    # convert to numpy array
+    variance_np = variance.detach().numpy()
 
     # sort the posterior variance
-    sorted_variance = variance.tolist().copy()
+    sorted_variance = variance_np.tolist().copy()
     sorted_variance.sort(reverse=True)
 
     # only keep the top scores (= batch size)
@@ -34,7 +48,7 @@ def explorative_run(surrogate_model, q, idx_test, test_x_torch):
     # determine the list indices that belong to these variance scores
     list_positions_selected_variance = []
     for current_variance in selected_variance:
-        position = [i for i,x in enumerate(list(variance)) if x == current_variance]
+        position = [i for i,x in enumerate(list(variance_np)) if x == current_variance]
 
         # add the positions of all list occurances of the selected variances to the position list
         for k in range(len(position)):

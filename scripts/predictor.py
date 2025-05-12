@@ -768,8 +768,8 @@ class ScopeBO:
                 # Fully explorative acquisition function. Implemented for benchmarking purposes and only for single objective runs.
                 if acquisition_function_mode.lower() == "explorative":
                     idx_sample, sample, list_position_sample = explorative_run(
-                        surrogate_model=surrogate_model, q=1, idx_test=idx_test, 
-                        test_x_torch=test_x_torch)
+                        surrogate_model=surrogate_model, q=1, objective_weights=objective_weights,
+                        idx_test=idx_test, test_x_torch=test_x_torch)
                     
                     # Update batch fantasy.
                     idx_test = np.delete(idx_test, list_position_sample[0])
