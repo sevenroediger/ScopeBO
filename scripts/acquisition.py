@@ -1,12 +1,15 @@
 import random
 
 from botorch.models import SingleTaskGP
+from botorch.utils.multi_objective.hypervolume import Hypervolume
+from botorch.utils.multi_objective.pareto import is_non_dominated
+import numpy as np
 import torch
 
 from .model import build_and_optimize_model
 
 
-def explorative_run(surrogate_model, q,objective_weights,idx_test, test_x_torch):
+def explorative_run(surrogate_model, q, objective_weights,idx_test, test_x_torch):
     """
     Fully explorative acquisition function solely for benchmarking purpose.
     Input:
@@ -65,7 +68,7 @@ def explorative_run(surrogate_model, q,objective_weights,idx_test, test_x_torch)
     return best_samples, samples, list_positions_selected_variance
 
 
-def greedy_run(surrogate_model, q, objective_mode, idx_test, test_x_torch):
+def greedy_run(surrogate_model, q, objective_weights, idx_test, test_x_torch):
     """
     Fully exploitative acqusition function.
     Input:
@@ -75,8 +78,6 @@ def greedy_run(surrogate_model, q, objective_mode, idx_test, test_x_torch):
             batch size
         objective_weights: list of float
             list with weights for the objectives in the scalarization (only multi-obj. opt.)
-        objective_mode: list of str
-            list with the modes of the individual objectives (maximization or minimization)
         idx_test: list
             list of test indices
         test_x_torch: tensor
@@ -90,20 +91,15 @@ def greedy_run(surrogate_model, q, objective_mode, idx_test, test_x_torch):
     # get the surrogate means
     means = surrogate_model.posterior(test_x_torch).mean
 
-    # check for minimization tasks and adjust values if so
-    # sign change converts minimization problems to pseudo-maximization problem for the algorithm
-    obj_sign = [-1.0 if mode.lower() == "min" else 1.0 for mode in objective_mode]
-    means = means * torch.tensor(obj_sign).to(**tkwargs).double()
-
     # scalarization in case of multi-objective optimization
-    if len(obj_sign) > 1:
+    if type(means[0].detach().tolist()) is list:  # for mono-objective, the type would be float
         # use the provided weights or otherwise average the predicted means
         if objective_weights is not None:
             objective_weights = torch.tensor(objective_weights).to(**tkwargs).double()
             means = (means * objective_weights).sum(dim=-1)
         else:
             means = means.mean(dim=-1)
-        
+
     # convert to numpy array
     means_np = means.detach().numpy()
 
@@ -132,6 +128,83 @@ def greedy_run(surrogate_model, q, objective_mode, idx_test, test_x_torch):
         samples.append(test_x_torch.detach().numpy().tolist()[position])
 
     return best_samples, samples, list_positions_selected_means
+
+
+def hypervolume_improvement(surrogate_model, q, objective_weights, cumulative_train_y, idx_test, test_x_torch):
+    """
+    Multiobjective greedy acquisition function. Exploit the improvement of the current hypervolume.
+    # NOTE: finish docstring.
+    """
+     
+    tkwargs = {"dtype": torch.double, "device": torch.device("cpu")}
+
+    # Calculate the reference point for the hypervolume (minimum value for each objective that was seen so far).
+    ref_mins = np.min(cumulative_train_y, axis=0)
+    ref_point = torch.tensor(ref_mins).double().to(**tkwargs)
+
+
+    # Get the surrogate means.
+    means = surrogate_model.posterior(test_x_torch).mean
+    
+    # Get the current Pareto front
+    train_y_torch = torch.tensor(cumulative_train_y).to(**tkwargs).double()
+    pareto_mask = is_non_dominated(train_y_torch)  # Check which points are non-dominated
+    pareto_y = train_y_torch[pareto_mask]  # The Pareto front is the collection of non-dominated points.
+
+    # Apply weights to the predicted means and Pareto front if requested.
+    if objective_weights is not None:
+        objective_weights = torch.tensor(objective_weights).to(**tkwargs).double()
+        means = means * objective_weights
+        pareto_y = pareto_y * objective_weights
+
+    # Calculate the hypervolume of the current Pareto front.
+    hv = Hypervolume(ref_point=ref_point)  # initialize hypervolume object.
+    initial_hv = hv.compute(pareto_y)  # calculate hypervolume
+    print(f"initial_hv: {initial_hv}")
+
+
+    # Calculate the improvement of the hypervolume for each test set point
+    hv_improvements = []
+    for i in range(means.shape[0]):  # loop through all test set samples
+        current_front = torch.cat([pareto_y, means[i].unsqueeze(0)], dim=0)  # add the test sample to the current pareto front
+        current_hv = hv.compute(current_front[is_non_dominated(current_front)])  # calculate the hv for that front
+        improvement = current_hv - initial_hv  # get the hypervolume improvement
+        hv_improvements.append(improvement)
+
+    # Get the indices of the top q values in hv_improvements (q is the batch size)
+    top_q_indices = np.array(hv_improvements).argsort()[-q:][::-1]
+
+    # Remove indices for which the hv_improvement was 0 (in case not enough led to improvement)
+    list_positions_samples = [idx for idx in top_q_indices if hv_improvements[idx] > 0]
+
+    # get the samples from the test data
+    test_x_list = test_x_torch.detach().numpy().tolist()
+    samples = [test_x_list[position] for position in list_positions_samples]
+    best_samples= [idx_test[position] for position in list_positions_samples]
+
+
+    # use the greedy acq fct to calculate the remaining samples in case that
+    # less samples than requested improved the hypervolume
+    # this acq fct uses simple scalarization of the objectives
+    remaining_q = q - len(list_positions_samples)
+    if remaining_q != 0:
+        # remove the just selected samples from idx_test and test_x_torch to avoid duplicate selections
+        updated_idx_test = np.delete(idx_test, list_positions_samples)
+        for position in list_positions_samples:
+            test_x_list.pop(position)
+        idx_greedy, samples_greedy, list_positions_greedy = greedy_run(
+            surrogate_model=surrogate_model, q=remaining_q, objective_weights=objective_weights,
+            idx_test=updated_idx_test, test_x_torch=torch.tensor(test_x_list).to(**tkwargs).double())
+        
+        # Apped these results to the results from the hypervolume acq fct
+        for idx in idx_greedy:
+            best_samples.append(idx)
+        for sample in samples_greedy:
+            samples.append(sample)
+        for position in list_positions_greedy:
+            list_positions_samples.append(position)
+
+    return best_samples, samples, list_positions_samples
 
 
 def random_run(q, idx_test, seed):

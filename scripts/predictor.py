@@ -21,7 +21,7 @@ from sklearn.preprocessing import MinMaxScaler
 from .model import build_and_optimize_model
 from .space_creator import create_reaction_space
 from .utils import EDBOStandardScaler, calculate_vendi_score, obtain_full_covar_matrix, vendi_pruning, variance_pruning, SHAP_analysis, draw_suggestions
-from .acquisition import greedy_run, explorative_run, random_run, low_variance_selection
+from .acquisition import greedy_run, explorative_run, random_run, low_variance_selection, hypervolume_improvement
 
 
 tkwargs = {
@@ -578,7 +578,8 @@ class ScopeBO:
         train_x_np = scaler_x.transform(df_train_x.to_numpy())
         test_x_np = scaler_x.transform(df_test_x.to_numpy())
         
-        # Scaling of training outputs.
+        # Scaling of training outputs. 
+        # Also convert minimization problems to pseudo-maximization problem by negating the output values.
         train_y_np = df_train_y.astype(float).to_numpy()
         for i in range(0, n_objectives):
             if objective_mode[i].lower() == 'min':
@@ -802,10 +803,15 @@ class ScopeBO:
                             acquisition_samples = 6
 
                     # run the acquisition function
-                    idx_sample, sample, list_position_sample = greedy_run(
-                        surrogate_model=surrogate_model, q=acquisition_samples, objective_weights=objective_weights,
-                        objective_mode=objective_mode, idx_test=idx_test, test_x_torch=test_x_torch)
-                    
+                    if n_objectives == 1:
+                        idx_sample, sample, list_position_sample = greedy_run(
+                            surrogate_model=surrogate_model, q=acquisition_samples, objective_weights=objective_weights,
+                            idx_test=idx_test, test_x_torch=test_x_torch)
+                    else:
+                        idx_sample, sample, list_position_sample = hypervolume_improvement(
+                            surrogate_model=surrogate_model, q=acquisition_samples, objective_weights=objective_weights,
+                            cumulative_train_y=cumulative_train_y,idx_test=idx_test, test_x_torch=test_x_torch)
+                        
                     # Update batch fantasy.
                     idx_test = np.delete(idx_test, list_position_sample[0])
                     idx_train = np.append(idx_train, idx_sample[0])
@@ -813,10 +819,10 @@ class ScopeBO:
                     cumulative_train_x.append(popped_sample)
                     best_samples.append(idx_sample[0])
                     if len(idx_sample) > 1:
-                        for sample in sample[1:]:  # the first entry of the list is the actual suggestion, the rest are the alternatives
-                            next_samples.append(sample[i])
+                        for sample in idx_sample[1:]:  # the first entry of the list is the actual suggestion, the rest are the alternatives
+                            next_samples.append(sample)
    
-                if acquisition_function_mode.lower() != "random":  # no prediction needed in case of random acq. fct.
+                if (acquisition_function_mode.lower() != "random") and (batch_exp != batch -1):  # no fantasy prediction needed in case of random acq. fct.
                     # Get the yield prediction for the suggested sample and save it for the fantasy.
                     y_pred = surrogate_model.posterior(
                         torch.tensor(sample)).mean.detach().numpy()[0].tolist()
