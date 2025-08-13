@@ -37,7 +37,8 @@ class Benchmark:
 
     
     def collect_data(self, filename_labelled, objectives, objective_mode,
-            seeds, name_results, init_sampling_method="random", Vendi_pruning_fractions = [None], batches=[None],budget=25, objective_weights = None, sample_threshold = None, enforce_dissimilarity=False, pruning_metric = "vendi_sample", acquisition_function_mode = 'greedy', 
+            seeds, name_results, init_sampling_method="random", Vendi_pruning_fractions = [None], batches=[None],budget=25, objective_weights = None, sample_threshold = None, 
+            enforce_dissimilarity=False, pruning_metric = "vendi_sample", acquisition_function_mode = 'greedy', 
             dft_filename = None, filename_prediction = "df_benchmark.csv", directory='.'):
         """
         Runs the function for selected parameter ranges and records the results per round for each set of parameters.
@@ -643,8 +644,8 @@ class Benchmark:
         print(f"Data collection finished! Results are saved in the subfolder {name_results}.")
 
 
-    def heatmap_plot(self,type_results, name_results, budget, objective_mode = {"all_obj":"max"}, objective_weights=None,
-                     bounds = {"rate":(2.349,1.035),"vendi":(6.366,1.941)},filename=None, show_plot=True,directory = '.'):
+    def heatmap_plot(self,type_results, name_results, budget, distr_mets, objective_mode = {"all_obj":"max"}, objective_weights=None,
+                     filename=None, show_plot=True,directory = '.'):
         """
         Generates and saves a heatmap plot for the requested result type across different batch sizes and Vendi_pruning_fractions.
         Options for displayed results: scope score ("scope"), vendi score ("vendi"), weighted objectives ("objectives", normalized if multiple objectives),
@@ -662,6 +663,12 @@ class Benchmark:
                 Name of the subfolder in which the result csv files are saved.
             budget: int
                 experimental budget used in the runs
+            distr_met: dict
+                dictionary of distribution metrics (as tuples) for the individual run metrics (vendi, all objectives)
+                The tuple should be (mean of the metric, standard deviation of the metric)
+                minimum input is the metrics that are required for the desired results type
+                The key for the vendi score distribution metrics should be "vendi".
+                Example input: {"rate": (4,5), "vendi": (1,2)} --> objective "rate" has a mean of 4 and st.dev. of 5
             objective_mode: dict
                 Dictionary of objective modes for objectives
                 Provide dict with value "min" in case of a minimization task (e. g. {"cost":"min"})
@@ -671,9 +678,6 @@ class Benchmark:
                 Weights for averaging the objective data
                 Example: {"yield": 0.3, "ee": 0.7}
                 Default is None --> all objectives will be averaged.
-            bounds: dict
-                dictionary of bounds for the individual metrics (vendi, all objectives)
-                Default values are for the ArI dataset.
             filename: str or None
                 name for the figure that is created. Default is None --> figure is not saved.
             show_plot: Boolean
@@ -729,7 +733,7 @@ class Benchmark:
             # If there are more than one objectives or if the type_results="scope", the objectives need to be normalized
             if (len(dict_dfs_obj) > 1) or (type_results.lower() == "scope"): 
                 for obj in objectives:
-                    dict_dfs_obj[obj] = dict_dfs_obj[obj].applymap(lambda x: self.normalization(score=x,type="obj",obj_bounds=bounds[obj]))
+                    dict_dfs_obj[obj] = dict_dfs_obj[obj].applymap(lambda x: self.standardization(score=x,distr_metrics=distr_mets[obj]))
                 # check for minimization objectives
                 min_obj = [obj for obj,value in objective_mode.items() if value == "min"]
                 if min_obj:
@@ -749,7 +753,7 @@ class Benchmark:
             df_heatmap = df_vendi
         elif type_results.lower() == "scope":    
             # Scaling the Vendi data for the scope score calculation (objective data was already normalized above)
-            df_vendi = df_vendi.applymap(lambda x: self.normalization(score=x,type="vendi",vendi_bounds=bounds["vendi"]))
+            df_vendi = df_vendi.applymap(lambda x: self.standardization(score=x,distr_metrics=distr_mets["vendi"]))
             # The scope score is here defined as vendi * objective.
             df_heatmap = df_vendi * df_obj
         else:
@@ -768,8 +772,8 @@ class Benchmark:
         return df_heatmap
 
 
-    def progress_plot(self,budget,type_results, name_results,objective_mode = {"all_obj":"max"}, objective_weights=None,
-                     bounds = {"rate":(2.349,1.035),"vendi":(6.366,1.941)},filename_figure = None, directory=".",show_plot=True):
+    def progress_plot(self,budget,type_results, name_results, distr_mets, objective_mode = {"all_obj":"max"}, objective_weights=None,
+                     filename_figure = None, directory=".",show_plot=True):
         """
         Generates a result(number of experimenst) y(x)-plot for the requested results.
         Options for displayed results: scope score ("scope"), vendi score ("vendi"), weighted objectives ("objectives", normalized if multiple objectives),
@@ -787,6 +791,12 @@ class Benchmark:
                     You can also provide the name of a specific objective for that run and then it will only analyze that one.
             name_results: str
                 Name of the subfolder in which the result csv files are saved.
+            distr_met: dict
+                dictionary of distribution metrics (as tuples) for the individual run metrics (vendi, all objectives)
+                The tuple should be (mean of the metric, standard deviation of the metric)
+                minimum input is the metrics that are required for the desired results type
+                The key for the vendi score distribution metrics should be "vendi".
+                Example input: {"rate": (4,5), "vendi": (1,2)} --> objective "rate" has a mean of 4 and st.dev. of 5
             objective_mode: dict
                 Dictionary of objective modes for objectives
                 Provide dict with value "min" in case of a minimization task (e. g. {"cost":"min"})
@@ -796,9 +806,6 @@ class Benchmark:
                 Weights for averaging the objective data
                 Example: {"yield": 0.3, "ee": 0.7}
                 Default is None --> all objectives will be averaged with equal weights.
-            bounds: dict
-                dictionary of bounds for the individual metrics (vendi, all objectives)
-                Default values are for the ArI dataset.
             filename_figure: str or None
                 name for the figure that is created. Default is None --> figure is not saved.
             directory: str
@@ -869,7 +876,7 @@ class Benchmark:
         # If there is only one objectives, the results are presented in natural values.
         if (type_results.lower() == "scope") or ((type_results.lower() == "objective") and (len(objectives) > 1)):
             for key in dict_unscaled_data.keys():
-                dict_unscaled_data[key] = dict_unscaled_data[key].applymap(lambda x: self.normalization(score=x,obj_bounds=bounds[key]))
+                dict_unscaled_data[key] = dict_unscaled_data[key].applymap(lambda x: self.standardization(score=x,distr_metrics=distr_mets[key]))
             # check for minimization objectives
             min_obj = [obj for obj, value in objective_mode.items() if value == "min"]
             if min_obj:
@@ -919,8 +926,8 @@ class Benchmark:
         return scaled_data.dropna(how="all")  # return the data
 
 
-    def track_samples(self,filename_umap, filename_data,name_results,objective_mode = {"all_obj":"max"}, objective_weights=None,
-                      bounds = {"rate":(2.349,1.035),"vendi":(6.366,1.941)},display_cut_samples=True, obj_to_display = None,
+    def track_samples(self,filename_umap, filename_data,name_results,distr_mets,objective_mode = {"all_obj":"max"}, objective_weights=None,
+                      display_cut_samples=True, obj_to_display = None,
                       label_round=False,filename_figure=None,directory='.'):
         """
         Visually tracks the evaluated and cut samples of a single benchmarking run on a provided UMAP.
@@ -936,6 +943,12 @@ class Benchmark:
                 Default: None --> the figure is not saved
             name_results: str
                 subfolder in which the results are located
+            distr_met: dict
+                dictionary of distribution metrics (as tuples) for the individual run metrics (vendi, all objectives)
+                The tuple should be (mean of the metric, standard deviation of the metric)
+                minimum input is the metrics that are required for the desired results type
+                The key for the vendi score distribution metrics should be "vendi".
+                Example input: {"rate": (4,5), "vendi": (1,2)} --> objective "rate" has a mean of 4 and st.dev. of 5
             objective_mode: dict
                 Dictionary of objective modes for objectives
                 Provide dict with value "min" in case of a minimization task (e. g. {"cost":"min"})
@@ -945,9 +958,6 @@ class Benchmark:
                 Weights for averaging the objective data
                 Example: {"yield": 0.3, "ee": 0.7}
                 Default is None --> all objectives will be averaged with equal weights.
-            bounds: dict
-                dictionary of bounds for the individual metrics (vendi, all objectives)
-                Default values are for the ArI dataset.
             display_cut_samples: Boolean
                 show the samples thta have been cut by the vendi scoring or not. Default = True.
                 If True, the samples in the plot will be colored by the round when they were selected.
@@ -992,7 +1002,7 @@ class Benchmark:
         dict_obj_scaled = {}
         dict_obj_av = {}
         for obj in dict_obj_values:
-            dict_obj_scaled[obj] = [self.normalization(score=value,type="obj",obj_bounds=bounds[obj]) for value in dict_obj_values[obj]]
+            dict_obj_scaled[obj] = [self.standardization(score=value,distr_metrics=distr_mets[obj]) for value in dict_obj_values[obj]]
             # check if the objective was a minimization task and treat appropriately if so
             if obj in min_obj:
                 dict_obj_scaled[obj] = [1 - value for value in dict_obj_scaled[obj]]
@@ -1009,7 +1019,7 @@ class Benchmark:
 
 
         # Scaling the vendi data for the scope score calculation.
-        vendi_scaled = self.normalization(score=vendi_score,type="vendi")
+        vendi_scaled = self.standardization(score=vendi_score,distr_metrics=distr_mets["vendi"])
         scope_score  =vendi_scaled * av_obj
         print(f"Scope score: {scope_score:.3f}")
         if len(objectives) > 1:
@@ -1117,6 +1127,7 @@ class Benchmark:
             figure = plot.get_figure()
             
             figure.savefig(wdir.joinpath(filename_figure))
+            
     
     def show_scope(self,filename_data,name_results,by_round=True,common_core=None,directory='.',molsPerRow=6):
         """
@@ -1200,33 +1211,70 @@ class Benchmark:
 
 
     @staticmethod
-    def feature_analysis(objectives,objective_mode,filename_data,filename_labelled_data,filename_analysis="feature_analysis.csv",directory="."):
+    def feature_analysis(filename,filename_labelled,objectives,objective_mode,
+                           filename_shap="df_shap.csv",plot_type=["bar"],directory="."):
+        
         """
-        Get the SHAP features from a benchmarking run using the ScopeBO function of the same name.
+        Wrapper for the ScopeBO().feature_analysis() function to get feature importance using SHAP
+        from a Benchmark().collect_data() raw data results file.
+        ---------------------------------------------------------------------
+        Inputs:
+            filename: str
+                filename of the reaction space csv file including experimental outcomes
+                default is reaction_space.csv
+            filename_labelled: str
+                filename of the fully labelled reaction space csv file
+            objectives: list
+                list of the objectives. E. g.: [yield,ee]
+            objective_mode: list
+                list of the mode of the objectives (max or min). E.g.: ["max","max"]
+            filename_shap: str
+                The function generates a csv file as input for the ScopeBO().feature_analysis() function.
+                Parameter defines the name of that file.
+                Default: "df_shap.csv"
+            plot_type: list of str
+                type of SHAP plot to be generated. Options:
+                    "bar" - bar plot of mean absolute SHAP values (Default)
+                    "beeswarm" - beeswarm plots of the individual SHAP values
+                    both options can be requested by using plot_type = ["bar","beeswarm"]
+                    providing an empty list supresses plotting
+            directory: str
+                Define working directory. Default is current directory (".").
 
-        # NOTE: complete docstring
+        ---------------------------------------------------------------------
+        Returns the shap.explainer object, mean absolute SHAP values, and the requested plot of SHAP values.
         """
 
-        wdir = Path(".")
-        df_labelled = pd.read_csv(wdir.joinpath(filename_labelled_data),index_col=0,header=0)  # file with the labelled data
-        df_data = pd.read_csv(wdir.joinpath(filename_data),index_col=0,header=0)  # result file of the benchmarking scope run
+        wdir = Path(directory)
 
-        # get the evaluated samples
-        df_data["eval_samples"] = df_data["eval_samples"].apply(lambda x: [y.strip("'") for y in x[1:-1].split(', ')])
-        idx_samples = [sample for round_list in [df_data.loc[round,"eval_samples"] for round in df_data.index] for sample in round_list]
+        # Load the results file
+        df_results = pd.read_csv(wdir.joinpath(filename),index_col=0,header=0)
+        # Process the data
+        df_results["eval_samples"] = df_results["eval_samples"].apply(lambda x: [y.strip("'") for y in x[1:-1].split(', ')])
 
-        # put the objective values of all samples that were not evaluated as "PENDING"
+        # Get the selected samples
+        idx_samples = []
+        for idx in df_results.index:
+            for sample in df_results.loc[idx,"eval_samples"]:
+               idx_samples.append(sample.encode().decode('unicode_escape'))
+
+        # Load the labelled dataframe and remove the objective data for all samples that have not been selected
+        df_shap = pd.read_csv(wdir.joinpath(filename_labelled),index_col=0,header=0)
+        idx_pending = df_shap.index.difference(idx_samples)
         for objective in objectives:
-            for idx in df_labelled.index:
-                if idx not in idx_samples:
-                    df_labelled.loc[idx,objective] = "PENDING"
+            df_shap.loc[idx_pending, objective] = "PENDING"
 
-        # save the file
-        df_labelled.to_csv(wdir.joinpath(filename_analysis),index=True,header=True)
+        # Save the dataframe
+        df_shap.to_csv(wdir.joinpath(filename_shap),index=True,header=True)
 
-        # run the ScopeBO function
-        shap_values, mean_abs_shap_values= ScopeBO().feature_analysis(objectives=objectives,objective_mode=objective_mode,filename=filename_analysis,directory=directory)
-        return shap_values, mean_abs_shap_values
+        # Call the ScopeBO() function for feature analysis
+        shap_values, mean_abs_shap_values = ScopeBO().feature_analysis(objectives=objectives,
+                                   objective_mode=objective_mode,
+                                   filename=filename_shap,
+                                   plot_type=plot_type,
+                                   directory=directory)
+        
+        return shap_values,mean_abs_shap_values
 
 
     @staticmethod
@@ -1255,15 +1303,30 @@ class Benchmark:
             return (score-vendi_bounds[1])/(vendi_bounds[0]-vendi_bounds[1])
         else:
             return print("No valid type provided for the normalization!")
+        
+    @staticmethod
+    def standardization(score,distr_metrics):
+        """
+        Standardizes a provided score.
+        distr_metric: tuple
+            (mean, stdev) --> both type float
+        """
+        return (score-distr_metrics[0])/distr_metrics[1]
           
 
-    def results_for_run_conti(self,budget,type_results, name_results, scale_to_exp=True,directory="."):
+    def results_for_run_conti(self,budget,type_results, name_results, distr_mets, scale_to_exp=True, directory="."):
         """
         Adapted version of progress_plot() to get the progress of the different metrics for a continue_data_collection() run.
         NOTE: Only works if there is just one run (can have multiple seeds) in the name_results folder.
         -------------------------
         name_results: str
             folder with results to be analyzed
+        distr_met: dict
+                dictionary of distribution metrics (as tuples) for the individual run metrics (vendi, all objectives)
+                The tuple should be (mean of the metric, standard deviation of the metric)
+                minimum input is the metrics that are required for the desired results type
+                The key for the vendi score distribution metrics should be "vendi".
+                Example input: {"rate": (4,5), "vendi": (1,2)} --> objective "rate" has a mean of 4 and st.dev. of 5
         budget: int
             scope size
         type_results: str
@@ -1334,8 +1397,8 @@ class Benchmark:
             unscaled_data2 = pd.DataFrame(results_list2,index_list).T
 
             # Scale the dataframes for the calculation of the scope score (using the experimentally determined bounds).
-            unscaled_data2 = unscaled_data2.applymap(lambda x: self.normalization(score=x,type="vendi"))
-            unscaled_data = unscaled_data.applymap(lambda x: self.normalization(score=x,type="obj"))
+            unscaled_data2 = unscaled_data2.applymap(lambda x: self.standardization(score=x,distr_metrics=distr_mets["vendi"]))
+            unscaled_data = unscaled_data.applymap(lambda x: self.standardization(score=x,distr_metrics=distr_mets["rate"]))
             unscaled_data = unscaled_data * unscaled_data2
 
         if scale_to_exp:
@@ -1354,6 +1417,7 @@ class Benchmark:
             recorded_rounds = len(unscaled_data.index)
             unscaled_data.index = range(prior_rounds,prior_rounds+recorded_rounds)
             return unscaled_data
+    
     
     @staticmethod
     def find_objectives(folder_name):
