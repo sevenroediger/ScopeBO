@@ -927,7 +927,7 @@ class Benchmark:
 
 
     def track_samples(self,filename_umap, filename_data,name_results,distr_mets,objective_mode = {"all_obj":"max"}, objective_weights=None,
-                      display_cut_samples=True, obj_to_display = None,
+                      display_cut_samples=True, obj_to_display = None, rounds_to_display = None,
                       label_round=False,filename_figure=None,directory='.'):
         """
         Visually tracks the evaluated and cut samples of a single benchmarking run on a provided UMAP.
@@ -967,7 +967,11 @@ class Benchmark:
                 Default is None (take the first listed objective and its extreme values as bounds)
                 Can also provide a dict with the objective name and its extreme values (max,min).
                 E. g. : obj_to_display = {"yield":(100,0)}
-
+            rounds_to_display: int or None
+                Specify how many rounds of the run you want to display (starting from the first one).
+                The metrics will also only be calculate for the these rounds.
+                E. g.: rounds_to_display=5 --> first 4 rounds will be displayed
+                Default is None --> shows all rounds
             label_round: Boolean
                 label the suggested samples by the round of selection. Default = False.
             directory: str
@@ -980,6 +984,10 @@ class Benchmark:
         # Read in UMAP and data.
         df_umap = pd.read_csv(wdir.joinpath(filename_umap),index_col=0, float_precision = "round_trip")
         df_data = pd.read_csv(wdir.joinpath(name_results+"/"+filename_data),index_col=0, float_precision = "round_trip")
+        
+        # Prune the number of rounds if requested
+        if rounds_to_display is not None:
+            df_data = df_data.iloc[:rounds_to_display,:]
         df_data["eval_samples"] = df_data["eval_samples"].apply(lambda x: [y.strip("'") for y in x[1:-1].split(', ')])
         df_data["cut_samples"] = df_data["cut_samples"].apply(lambda x: [y.strip("'") for y in x[1:-1].split(', ')])
         # get the objectives
@@ -1129,7 +1137,7 @@ class Benchmark:
             figure.savefig(wdir.joinpath(filename_figure))
             
     
-    def show_scope(self,filename_data,name_results,by_round=True,common_core=None,directory='.',molsPerRow=6):
+    def show_scope(self,filename_data,name_results,by_round=True,rounds_to_display=None,common_core=None,directory='.',molsPerRow=6):
         """
         Depict the substrates that were selected for the scope.
         ------------------------------------------------------------------------------------------------
@@ -1140,6 +1148,11 @@ class Benchmark:
                 subfolder in which the results are located
             by_round: Boolean
                 Select if the selected compounds are shown by round (True --> Default) or all together
+            ounds_to_display: int or None
+                Specify how many rounds of the run you want to display (starting from the first one).
+                The metrics will also only be calculate for the these rounds.
+                E. g.: rounds_to_display=5 --> first 4 rounds will be displayed
+                Default is None --> shows all rounds
             common_core: str
                 string for the common core of the molecules to align them
                 Default: None
@@ -1152,6 +1165,9 @@ class Benchmark:
 
         # Read in UMAP and data.
         df_data = pd.read_csv(wdir.joinpath(name_results+"/"+filename_data), index_col=0,header=0)
+        # Prune the number of rounds if requested
+        if rounds_to_display is not None:
+            df_data = df_data.iloc[:rounds_to_display,:]
         df_data["eval_samples"] = df_data["eval_samples"].apply(lambda x: [y.strip("'") for y in x[1:-1].split(', ')])
         # get the objectives
         objectives = ast.literal_eval(df_data.columns[0][11:])
