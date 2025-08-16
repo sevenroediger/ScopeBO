@@ -89,11 +89,6 @@ class ScopeBO:
                 list of the objectives. E. g.: [yield,ee]
             objective_mode: list
                 list of the mode of the objectives (max or min)
-            directory: str
-                name of the working directory.
-                Default is the current directory.
-            seed: int  
-                random seed
             plot_type: list of str
                 type of SHAP plot to be generated. Options:
                     "bar" - bar plot of mean absolute SHAP values (Default)
@@ -301,8 +296,8 @@ class ScopeBO:
         pruning_metric: str
             Metric used for the pruning.
             Options:
-                "vendi": pruning by vendi scores before every round of experiments (default).
-                "vendi_sample": pruning by vendi score before every sample.
+                "vendi_batch": pruning by vendi scores before every round of experiments.
+                "vendi_sample": pruning by vendi score before every sample (default).
                 "variance": pruning by surrogate model variance (implemented only for benchmarking purposes).
         acquisition_function_mode: str
             Choose the acqusition function.
@@ -628,7 +623,7 @@ class ScopeBO:
 
         # Prune the search space via Vendi scoring if requested.
         if Vendi_pruning_fraction != 0:
-            if pruning_metric.lower() == "vendi":
+            if pruning_metric.lower() == "vendi_batch":
                 cumulative_test_x, cut_by_vendi, idx_test = vendi_pruning(
                     idx_test = idx_test,
                     idx_train = idx_train, 
