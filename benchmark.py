@@ -927,7 +927,7 @@ class Benchmark:
     def track_samples(self,filename_umap, filename_data,name_results,scope_method="geometric_mean", 
                       objective_mode = {"all_obj":"max"}, objective_weights=None, 
                       bounds = {"rate":(2.349,1.035),"vendi":(6.366,1.941)},display_cut_samples=True, obj_to_display = None, 
-                      rounds_to_display = None, label_round=False,filename_figure=None,directory='.'):
+                      rounds_to_display = None, label_round=False,filename_figure=None,restrict_samples=None,directory='.'):
         """
         Visually tracks the evaluated and cut samples of a single benchmarking run on a provided UMAP.
         Saves the generated plot. Also provides the results for the run.
@@ -973,6 +973,12 @@ class Benchmark:
                 Default is None --> shows all rounds
             label_round: Boolean
                 label the suggested samples by the round of selection. Default = False.
+            restrict_samples: str
+                Option to restrict the UMAP samples to the samples were in the actually used searchspace
+                (e. g. when only a subset of a dataset was used for a run)
+                The input parameter is the filename of the used searchspace 
+                (must be a subset of the one in the UMAP)
+                Default is None (no restriction applied).
             directory: str
                 current directory. Default: "."
         """
@@ -983,6 +989,13 @@ class Benchmark:
         # Read in UMAP and data.
         df_umap = pd.read_csv(wdir.joinpath(filename_umap),index_col=0, float_precision = "round_trip")
         df_data = pd.read_csv(wdir.joinpath(name_results+"/"+filename_data),index_col=0, float_precision = "round_trip")
+
+        # Chec if the UMAP samples will be restricted
+        if restrict_samples is not None:
+            df_space = pd.read_csv(wdir.joinpath(restrict_samples),index_col=0, float_precision = "round_trip")
+            # Only keep the samples at are in the search space
+            df_umap = df_umap.loc[df_umap.index.intersection(df_space.index)]
+
         
         # Prune the number of rounds if requested
         if rounds_to_display is not None:
