@@ -30,7 +30,42 @@ class HiddenPrints:
 
 
 class Benchmark:
-    """Class for generating benchmarking data and analyzing this data."""
+    """
+    Class for running full scopes, collecting their data, and analyzing the results.
+    
+    Functions for data collection:
+        collect_data: 
+            main functionality for running scopes
+        continue_data_collection:
+            continuing scope running by extending existing scopes
+
+    Functions for data analysis:
+        heatmap plot:
+            plot the overall results of scopes
+        progress_plot:
+            plot the progression of scopes with increasing scope size
+        results_for_run_conti:
+            version of progress_plot that works for the results of continue_data_collection
+        track_samples:
+            visualize the selected samples on a UMAP
+        show_scope:
+            draw the selected compounds
+        feature_analysis:
+            SHAP analysis of the surrogate model for a scope
+
+
+
+    Utility functions:
+        normalization:
+            normalize values
+        standardization:
+            standardize values
+        calculate_scope_score:
+            calculate scope scores
+        find_objectives:
+            look up the objectives that were used in a scope
+
+    """
 
     def __init__(self):
         pass
@@ -969,7 +1004,7 @@ class Benchmark:
             rounds_to_display: int or None
                 Specify how many rounds of the run you want to display (starting from the first one).
                 The metrics will also only be calculate for the these rounds.
-                E. g.: rounds_to_display=5 --> first 4 rounds will be displayed
+                E. g.: rounds_to_display=4 --> first 4 rounds will be displayed
                 Default is None --> shows all rounds
             label_round: Boolean
                 label the suggested samples by the round of selection. Default = False.
