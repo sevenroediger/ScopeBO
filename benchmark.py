@@ -53,8 +53,6 @@ class Benchmark:
         feature_analysis:
             SHAP analysis of the surrogate model for a scope
 
-
-
     Utility functions:
         normalization:
             normalize values
@@ -678,7 +676,7 @@ class Benchmark:
 
 
     def heatmap_plot(self,type_results, name_results, budget, scope_method = "geometric_mean",objective_mode = {"all_obj":"max"}, objective_weights=None,
-                     bounds = {"rate":(2.349,1.035),"vendi":(6.366,1.941)},filename=None, show_plot=True,directory = '.'):
+                    bounds = {"rate":(2.349,1.035),"vendi":(6.366,1.941)},filename=None, show_plot=True,directory = '.'):
         """
         Generates and saves a heatmap plot for the requested result type across different batch sizes and Vendi_pruning_fractions.
         Options for displayed results: scope score ("scope"), vendi score ("vendi"), weighted objectives ("objectives", normalized if multiple objectives),
@@ -719,81 +717,30 @@ class Benchmark:
         """
 
         wdir = Path(directory)
-        # Instantiate variable.
-        df_obj = None
-        dict_dfs_obj = None
-        df_vendi = None
-        df_heatmap = None
-
-        # Prepare the DataFrame according to input.
-        if ((type_results.lower() == "vendi") or (type_results.lower() == "scope")):
-            csv_filename_results = wdir.joinpath(name_results+"/benchmark_vendi_av.csv")
-            df_vendi = pd.read_csv(f"{csv_filename_results}",index_col=0,header=0, float_precision = "round_trip")  # contains the Vendi scores for each round in each element
-            df_vendi = df_vendi.applymap(lambda x: ast.literal_eval(x))
-            df_vendi = df_vendi.applymap(lambda x: x[-1])  # only keep the final Vendi score
-            df_vendi = df_vendi.apply(pd.to_numeric)
-
-        if type_results.lower() != "vendi":  # objective, specific objective, or scope score requested
-            # get the objective names
-            objectives = self.find_objectives(name_results)
-            # check if a specific objective was requested
-            if (type_results.lower() != "scope") and (type_results != "objective"):
-                    objectives = [type_results]  # reassign the objectives list as the requested objective
-            # read and process the objective data for each requested objective
-            dict_dfs_obj = {}
-            for objective in objectives:
-                csv_filename_results = wdir.joinpath(name_results+f"/benchmark_obj[{objective}]_av.csv")
-                dict_dfs_obj[objective] = pd.read_csv(f"{csv_filename_results}",index_col=0,header=0, float_precision = "round_trip")
-                dict_dfs_obj[objective] = dict_dfs_obj[objective].applymap(lambda x: ast.literal_eval(x))  # contains the average objective values for each round in each element
-                for batch in dict_dfs_obj[objective].index:
-                    for column in dict_dfs_obj[objective].columns:
-                        av_obj_list = dict_dfs_obj[objective].loc[batch,column]
-                        batch_sizes = None
-                        if type(batch) is not str:  # case using a fixed batch size
-                            batch_sizes = [batch]*len(av_obj_list)
-                        else:  # case using different batch sizes in each round
-                            batch_sizes = [int(el) for el in batch.split("-")]  # list with the batch sizes for each round
-                        if sum(batch_sizes) > budget:
-                            difference = budget - sum(batch_sizes)
-                            batch_sizes[-1] += difference  # reduce the last batch if it was smaller due to budget constraints
-                        # reassign with the average obj value for the run
-                        total_obj = [i*j for i,j in zip(batch_sizes,av_obj_list)]
-                        dict_dfs_obj[objective].loc[batch,column] = sum(total_obj)/sum(batch_sizes)
-
-                dict_dfs_obj[objective] = dict_dfs_obj[objective].apply(pd.to_numeric)
-            
-            # If there are more than one objectives or if the type_results="scope", the objectives need to be normalized
-            if (len(dict_dfs_obj) > 1) or (type_results.lower() == "scope"): 
-                for obj in objectives:
-                    dict_dfs_obj[obj] = dict_dfs_obj[obj].applymap(lambda x: self.normalization(score=x,type="obj",obj_bounds=bounds[obj]))
-                # check for minimization objectives
-                min_obj = [obj for obj,value in objective_mode.items() if value == "min"]
-                if min_obj:
-                    for obj in min_obj:
-                        dict_dfs_obj[obj] = dict_dfs_obj[obj].applymap(lambda x: 1-x)
-            # average the objectives (or apply weights if provided)
-            if (objective_weights is not None) and (len(objectives) > 1):
-                # ensure that the weights sum up to 1
-                sum_weights = sum(objective_weights.values())
-                objective_weights = {obj: value/sum_weights for obj,value in objective_weights.items()}
-            else:
-                objective_weights = {obj: 1/len(objectives) for obj in objectives}
-            # combine the objectives
-            df_obj = sum(objective_weights[obj] * dict_dfs_obj[obj] for obj in dict_dfs_obj.keys())
-
-        if type_results.lower() == "vendi":
-            df_heatmap = df_vendi
-        elif type_results.lower() == "scope":    
-            # Scaling the Vendi data for the scope score calculation (objective data was already normalized above)
-            df_vendi = df_vendi.applymap(lambda x: self.normalization(score=x,type="vendi",vendi_bounds=bounds["vendi"]))
-            # calculate the scope score
-            df_heatmap = self.calculate_scope_score(df_obj,df_vendi,scope_method)
-        else:
-            df_heatmap = df_obj
+        
+        
+        # Get the overview for the requested data
+        dfs_scaled, type_results = self.get_metric_overview(wdir,budget,type_results, name_results, scope_method, objective_mode,
+                    objective_weights, bounds)
+        
+        means = dfs_scaled["means"]
+        
+        # dfs_scaled have the different conditions (batch_pruning) as columns and the scope size as indices
+        # transform to grid with batch sizes as indices and pruning amounds as columns
+        batch_sizes = list(set([int(col.split("_")[0][1:]) for col in means.columns]))
+        pruning_amounts = list(set([int(col.split("_")[1][1:]) for col in means.columns]))
+        df_heatmap = pd.DataFrame(np.nan,index=batch_sizes,columns=pruning_amounts)
+        df_heatmap.index = sorted(df_heatmap.index)
+        df_heatmap.columns = sorted(df_heatmap.columns)
+        for batch in batch_sizes:
+            for pruning in pruning_amounts:
+                df_heatmap.loc[batch,pruning] = means.loc[budget,f"b{batch}_V{pruning}"]
 
         if show_plot:
             # Generate and save the heatmap plot.
             plt.figure(figsize=(10,3))
+            if type_results == "comb_obj":
+                type_results = "Combined objective"
             heatmap = sns.heatmap(df_heatmap,annot=True, fmt=".3f", linewidths=1,cmap='crest',cbar_kws={'label': f"{type_results} score"})
             heatmap.set(xlabel="Vendi pruning fraction in %", ylabel="batch size")
             heatmap.tick_params(length=0)
@@ -802,161 +749,101 @@ class Benchmark:
                 heatmap_figure = heatmap.get_figure()
                 heatmap_figure.savefig(wdir.joinpath(filename))
         return df_heatmap
-
+    
 
     def progress_plot(self,budget,type_results, name_results, scope_method= "geometric_mean", objective_mode = {"all_obj":"max"},
-                      objective_weights=None, bounds = {"rate":(2.349,1.035),"vendi":(6.366,1.941)},filename_figure = None, 
-                      directory=".",show_plot=True):
-        """
-        Generates a result(number of experimenst) y(x)-plot for the requested results.
-        Options for displayed results: scope score ("scope"), vendi score ("vendi"), weighted objectives ("objectives", normalized if multiple objectives),
-        or individual objectives displayed by their respective name.
+                        objective_weights=None, bounds = {"rate":(2.349,1.035),"vendi":(6.366,1.941)},filename_figure = None, 
+                        directory=".",show_plot=True,show_stdev=True):
+            """
+            Generates a result(number of experimenst) y(x)-plot for the requested results.
+            Options for displayed results: scope score ("scope"), vendi score ("vendi"), weighted objectives ("objective", normalized if multiple objectives),
+            or individual objectives displayed by their respective name.
 
-        Inputs:   
-            budget: int
-                experimental budget used in the runs 
-            type_results: str
-                Requested type of result.
-                Options:
-                    "vendi": Vendi score
-                    "objective": average objective values
-                    "scope": scope score
-                    You can also provide the name of a specific objective for that run and then it will only analyze that one.
-            name_results: str
-                Name of the subfolder in which the result csv files are saved.
-            scope_method: str
-                method to calculate the scope score ("average","product","geometric_mean" (Default))
-            objective_mode: dict
-                Dictionary of objective modes for objectives
-                Provide dict with value "min" in case of a minimization task (e. g. {"cost":"min"})
-                Code will assume maximization for all non-listed objectives
-                Default is {"all_obj":"max"}
-            objective_weights: dict or None
-                Weights for averaging the objective data
-                Example: {"yield": 0.3, "ee": 0.7}
-                Default is None --> all objectives will be averaged with equal weights.
-            bounds: dict
-                dictionary of bounds for the individual metrics (vendi, all objectives)
-                the dict keys are the metric, the values are a tuple of max and min value
-                Default values are for the ArI dataset.
-            filename_figure: str or None
-                name for the figure that is created. Default is None --> figure is not saved.
-            directory: str
-                current directory. Default: '.'
-            show_plot: Boolean
-                Option to display the generated line plot (default is True).
-        """
+            Inputs:   
+                budget: int
+                    experimental budget used in the runs 
+                type_results: str
+                    Requested type of result.
+                    Options:
+                        "vendi": Vendi score
+                        "objective": average objective values
+                        "scope": scope score
+                        You can also provide the name of a specific objective for that run and then it will only analyze that one.
+                name_results: str
+                    Name of the subfolder in which the result csv files are saved.
+                scope_method: str
+                    method to calculate the scope score ("average","product","geometric_mean" (Default))
+                objective_mode: dict
+                    Dictionary of objective modes for objectives
+                    Provide dict with value "min" in case of a minimization task (e. g. {"cost":"min"})
+                    Code will assume maximization for all non-listed objectives
+                    Default is {"all_obj":"max"}
+                objective_weights: dict or None
+                    Weights for averaging the objective data
+                    Example: {"yield": 0.3, "ee": 0.7}
+                    Default is None --> all objectives will be averaged with equal weights.
+                bounds: dict
+                    dictionary of bounds for the individual metrics (vendi, all objectives)
+                    the dict keys are the metric, the values are a tuple of max and min value
+                    Default values are for the ArI dataset.
+                filename_figure: str or None
+                    name for the figure that is created. Default is None --> figure is not saved.
+                directory: str
+                    current directory. Default: '.'
+                show_plot: Boolean
+                    Option to display the generated line plot (default is True).
+                show_stdev: Boolean
+                    Option to display the standard deviation of the displayed metric.
+            """
 
-        wdir = Path(directory)
+            wdir = Path(directory)
 
-        # Instantiate some variables.
-        dict_raw_data = {}
-        dict_unscaled_data = {}
-        objectives = None
-        unscaled_data = None
-        index_list = None
-        batch_sizes_list = None
+            # Get the overview for the requested data
+            dfs_scaled, type_results = self.get_metric_overview(wdir,budget,type_results, name_results, scope_method, objective_mode,
+                        objective_weights, bounds)
 
-        # Read in the required data
-        if ((type_results.lower() == "vendi") or (type_results.lower() == "scope")):
-            dict_raw_data["vendi"] = pd.read_csv(wdir.joinpath(name_results+"/benchmark_vendi_av.csv"),index_col=0,header=0, float_precision = "round_trip")  # contains the Vendi scores for each round in each element
-        if type_results.lower() != "vendi":  # objective, specific objective, or scope score requested
-            # get the objective names
-            objectives = self.find_objectives(name_results)
-            # check if a specific objective was requested
-            if (type_results.lower() != "scope") and (type_results.lower() != "objective"):
-                    objectives = [type_results]  # reassign the objectives list as the requested objective
-            # read and process the objective data for each requested objective
-            for objective in objectives:
-                csv_filename_results = wdir.joinpath(name_results+f"/benchmark_obj[{objective}]_av.csv")
-                dict_raw_data[objective] = pd.read_csv(f"{csv_filename_results}",index_col=0,header=0, float_precision = "round_trip")
-        # Change data to processable format
-        for key in dict_raw_data.keys():
-            dict_raw_data[key] = dict_raw_data[key].applymap(lambda x: ast.literal_eval(x))
+            # Plot and save the figure if requested.
+            if show_plot:
+                means = dfs_scaled["means"]
+                dfs_scaled["means"].columns
+                stds = dfs_scaled["stdev"]
 
-        # loop through all the dataframes to process them
-        for key in dict_raw_data.keys():
-            index_list = []
-            batch_sizes_list = []
-            results_list = []
-            for batch in dict_raw_data[key].index:
-                for Vpf in dict_raw_data[key].columns:
-                    index_string = "b"+str(batch)+"_V"+str(Vpf)
-                    index_list.append(index_string)
-                    batch_sizes = None
-                    if type(batch) is int:  # case using a fixed batch size
-                        batch_sizes = [int(batch)]*len(dict_raw_data[key].loc[batch,Vpf])
-                        difference = budget - sum(batch_sizes)
-                        batch_sizes[-1] += difference  # reduce the last batch if it was smaller due to budget constraints
-                    else:  # case using different batch sizes in each round
-                        batch_sizes = [int(el) for el in batch.split("-")]  # list with the batch sizes for each round
-                    batch_sizes_list.append(batch_sizes)
-                    
-                    processed_data = []  # list to store the processed data
-                    if key == "vendi":
-                        processed_data = dict_raw_data[key].loc[batch,Vpf]
-                    else:  # processing of objective data
-                        unprocessed_obj = dict_raw_data[key].loc[batch,Vpf]  # these are the average results per round, not for all experiments until this round!
-                        total_obj = [i*j for i,j in zip(batch_sizes,unprocessed_obj)]  # [batch size]*[average obj] for each round
-                        for round in range(len(unprocessed_obj)):
-                            processed_result = sum(total_obj[:(round+1)]) / sum(batch_sizes[:(round+1)])
-                            processed_data.append(processed_result)
-                    results_list.append(processed_data)
-            dict_unscaled_data[key] = pd.DataFrame(results_list,index_list).T
+                fig, ax = plt.subplots(figsize=(6,6))
+                
+                for col in means.columns:
+                    x    = means.index.values
+                    mean = means[col].values
+                    std  = stds[col].values
 
-        # normalize the results if required
-        # For type_results = objective, only normalize if there are multiple objectives (so that they can be properly weighted)
-        # If there is only one objectives, the results are presented in natural values.
-        if (type_results.lower() == "scope") or ((type_results.lower() == "objective") and (len(objectives) > 1)):
-            for key in dict_unscaled_data.keys():
-                dict_unscaled_data[key] = dict_unscaled_data[key].applymap(lambda x: self.normalization(score=x,obj_bounds=bounds[key]))
-            # check for minimization objectives
-            min_obj = [obj for obj, value in objective_mode.items() if value == "min"]
-            if min_obj:
-                for obj in min_obj:
-                    dict_unscaled_data[obj] = dict_unscaled_data[obj].applymap(lambda x: 1-x)
-        
-        # average the objectives (or apply weights if provided; only required if type_results is not "vendi")
-        if type_results.lower() != "vendi":
-            if (objective_weights is not None) and (len(objectives) > 1):
-                # ensure that the weights sum up to 1
-                sum_weights = sum(objective_weights.values())
-                objective_weights = {obj: value/sum_weights for obj,value in objective_weights.items()}
-            else:
-                objective_weights = {obj: 1/len(objectives) for obj in objectives}
-            # combine the objectives
-            dict_unscaled_data["comb_obj"] = sum(objective_weights[obj] * dict_unscaled_data[obj] for obj in objectives)
-        
-        # Assign the data that is displayed in the plot
-        if type_results.lower() == "scope":
-            unscaled_data = self.calculate_scope_score(dict_unscaled_data["comb_obj"],dict_unscaled_data["vendi"],scope_method)
-        elif type_results.lower() == "vendi":
-            unscaled_data = dict_unscaled_data["vendi"]
-        else:
-            unscaled_data = dict_unscaled_data["comb_obj"]
+                    # mask nan values that would hinder printing
+                    mask = ~np.isnan(mean) & ~np.isnan(std)
+                    x, mean, std = x[mask], mean[mask], std[mask]
 
-        #  The data is currently shown per batch (which can be different for the different runs). Still needs to be "scaled" to the number of experiments. 
-        scaled_data = pd.DataFrame(np.nan,[x+1 for x in range(budget)],unscaled_data.columns)  # create empty dataframe with the right shape
-        for column_nr in range(len(unscaled_data.columns)):
-            batch_sizes = batch_sizes_list[column_nr]  # batch sizes for each round
-            nr_experiments = [sum(batch_sizes[:round+1]) for round in range(len(batch_sizes))]  # total number of experiments including for each round
-            for entry in range(len(unscaled_data.index)):
-                if pd.notna(unscaled_data.iloc[entry,column_nr]):  # check that the value is actually numeric and not nan
-                    scaled_data.iloc[nr_experiments[entry]-1, column_nr] = unscaled_data.iloc[entry,column_nr]  # -1 because iloc is 0-indexed
+                    color = ax._get_lines.get_next_color()
+                    ax.plot(x, mean, label=col, color=color)
+                    # if show_stdev.lower()=="area":
+                    #     ax.fill_between(x, mean - std, mean + std, alpha=0.1, color=color)
+                    # elif show_stdev.lower()=="lines":
+                    #     ax.plot(x, mean + std, linestyle="-", color=color, alpha=0.2)
+                    #     ax.plot(x, mean - std, linestyle="-", color=color, alpha=0.2)
+                    if show_stdev:
+                        ax.fill_between(x, mean - std, mean + std, alpha=0.1, color=color)
+                        ax.plot(x, mean + std, linestyle="--", color=color, alpha=0.3)
+                        ax.plot(x, mean - std, linestyle="--", color=color, alpha=0.3)
 
-        # Plot and save the figure if requested.
-        if show_plot:
-            plt.figure(figsize=(10,10))
-            plot = sns.lineplot(data=scaled_data)
-            plt.xlabel('Number of selected samples')
-            plt.ylabel(f"{type_results} score")
-            plt.show()
-            if filename_figure is not None:
-                figure = plot.get_figure()
-                figure.savefig(wdir.joinpath(filename_figure))
+                ax.set_xlabel("Scope size")
+                if type_results == "comb_obj":
+                    type_results = "Combined objective"
+                ax.set_ylabel(f"{type_results} score")
+                ax.legend(title="Columns")
+                plt.show()
 
+                # save the figure if requested
+                if filename_figure is not None:
+                    figure = fig.get_figure()
+                    figure.savefig(wdir.joinpath(filename_figure))
 
-        return scaled_data.dropna(how="all")  # return the data
+            return dfs_scaled["means"], dfs_scaled["stdev"]  # return the data
 
 
     def track_samples(self,filename_umap, filename_data,name_results,scope_method="geometric_mean", 
@@ -1345,6 +1232,7 @@ class Benchmark:
     @staticmethod
     def normalization(score,type="obj",vendi_bounds=(6.366,1941),obj_bounds=(2.349,1.035)):
         """
+        Helper function:
         Function to normalize Vendi scores and average objectives.
         Input:
             score: float or int
@@ -1372,6 +1260,7 @@ class Benchmark:
     @staticmethod
     def standardization(score,distr_metrics):
         """
+        Helper function:
         Standardizes a provided score.
         distr_metric: tuple
             (mean, stdev) --> both type float
@@ -1382,6 +1271,7 @@ class Benchmark:
     @staticmethod
     def calculate_scope_score(obj_score,vendi_score,method):
         """
+        Helper function:
         Calculate the scope score using different calculation methods.
         obj_score, vendi_score: float of the respective scaled score.
         method: string (Options "average", "product","geometric_mean")
@@ -1510,7 +1400,7 @@ class Benchmark:
     def find_objectives(folder_name):
 
         """
-        Find the names of the objectives in the raw results.
+        Helper function to find the names of the objectives in the raw results.
         -------------------
         Input:
             folder_name: path of the folder to be analzyed
@@ -1527,6 +1417,178 @@ class Benchmark:
         
         # Get the list of objectives from the column name and return it
         return ast.literal_eval(df_results.columns[0][11:])
+    
+
+    @staticmethod
+    def get_metric_overview(wdir,budget,type_results, name_results, scope_method, objective_mode,
+                        objective_weights, bounds):
+        """
+        Helper function to calculate a metric overview for the functions progress_plot() and heatmap_plot().
+        See these functions for an overview of the function parameters.
+        Returns a dict of df's with the means (key: "means") and standard deviation (key: "stdev") of the requested metric.
+        Also returns the name of the type of the results (type_results: str).
+
+        The dataframes in the dict have the following structure:
+            setting1    setting2    ...
+        1   score       nan
+        2   score       score
+        3   score       nan
+        4   score       score
+
+        The indices are the scope sizes and 
+        """
+
+        # get all the raw files and sort them by hyperparameter combination
+        raw_path = wdir.joinpath(name_results+"/raw_data/")
+        setting_dict = {}
+        for file in os.listdir(raw_path):
+            combi = "_".join(file.split("_")[1:3])
+            if combi not in setting_dict.keys():
+                setting_dict[combi] = [file]
+            else:
+                setting_dict[combi].append(file)
+
+        # get the objective names
+        objectives = Benchmark.find_objectives(name_results)
+
+        # go through all the different hyperparameter settings
+        batch_sizes_list = []
+        dict_unscaled_mean = {}
+        dict_unscaled_stdev = {}
+
+        for combi in setting_dict.keys():
+            # list to store the results of all seeds for one setting
+            seeded_list = []
+            seeds = len(setting_dict[combi])
+            # go through the different files 
+            for seed_file in setting_dict[combi]:
+
+                # get lists of the values in each round for each objective and the vendi score (for one seed)
+                dict_raw_data = {}
+                batch_sizes = None
+
+                df_raw = pd.read_csv(f"{raw_path}/{seed_file}",index_col=0,header=0)
+                df_raw[f"obj_values {objectives}"] = df_raw[f"obj_values {objectives}"].apply(lambda x: ast.literal_eval(x))
+
+                #get the vendi data
+                dict_raw_data["vendi"] = df_raw["Vendi_score"].to_list()
+
+                # get the objective data
+                for i,obj in enumerate(objectives):
+                    if len(objectives) > 1:  # structure: [[<values obj1>],[<values obj2>]]
+                        dict_raw_data[obj] = df_raw[f"obj_values {objectives}"].apply(lambda x: np.mean(x[i])).to_list()
+                    else:  # structure: [<values obj1>]
+                        dict_raw_data[obj] = df_raw[f"obj_values {objectives}"].apply(lambda x: np.mean(x)).to_list()
+                    # figure out the batch sizes
+                    batch = combi.split("_")[0][1:]
+                    if batch.isdigit():  # case using a fixed batch size
+                        batch = int(batch)
+                        batch_sizes = [int(batch)]*len(dict_raw_data[obj])
+                        difference = budget - sum(batch_sizes)
+                        batch_sizes[-1] += difference  # reduce the last batch if it was smaller due to budget constraints
+                    else:  # case using different batch sizes in each round
+                        batch_sizes = [int(el) for el in batch.split("-")]  # list with the batch sizes for each round
+                    # the obj data is the average value obtained in each round, 
+                    # but we need the culmulative results until this round
+                    total_obj = [i*j for i,j in zip(batch_sizes,dict_raw_data[obj])]  # batch size * average obj for each round
+                    processed_obj = []
+                    for round in range(len(dict_raw_data[obj])):
+                        processed_result = sum(total_obj[:(round+1)]) / sum(batch_sizes[:(round+1)])
+                        processed_obj.append(processed_result)
+                    # reassign the obj data (now with the cumulative averages)
+                    dict_raw_data[obj] = processed_obj
+
+                # save the results for this seed
+                seeded_list.append(dict_raw_data)
+
+            batch_sizes_list.append(batch_sizes)
+
+            # process the requested data
+            processed_mean = []
+            processed_stdev = []
+
+            # case when a specific objective (or the only one) or the vendi score is requested
+            if type_results.lower() not in ["scope","objective"] or (type_results.lower() == "objective" and len(objectives) == 1):
+                if type_results == "objective":
+                    type_results = objectives[0]  # reassign with the name of the only objective
+                stacked = np.stack([d[type_results.lower()] for d in seeded_list], axis=0)
+                processed_mean = np.mean(stacked, axis=0).tolist()
+                if seeds > 1:
+                    processed_stdev  = np.std(stacked, axis=0, ddof=1).tolist()  # using Bessel's correction
+                else:
+                    processed_stdev  = np.std(stacked, axis=0).tolist()  # no correction if single seed
+
+
+            # combined objectives or scope score is requested
+            else:
+                if type_results.lower() == "objective":
+                    type_results = "comb_obj"
+                # check for minimization objectives
+                min_obj = [obj for obj, value in objective_mode.items() if value == "min"]
+
+                # preprocess the objective weights
+                if (objective_weights is not None):
+                    # ensure that the weights sum up to 1
+                    sum_weights = sum(objective_weights.values())
+                    objective_weights = {obj: value/sum_weights for obj,value in objective_weights.items()}
+                else:
+                    objective_weights = {obj: 1/len(objectives) for obj in objectives}
+                # process the data for the individual seeds
+                for seed in range(len(seeded_list)):
+                    # normalize the data
+                    for metric in objectives + ["vendi"]:
+                        seeded_list[seed][metric] = [Benchmark.normalization(score=x,obj_bounds=bounds[metric]) for x in seeded_list[seed][metric]]
+
+                    # invert minimization tasks
+                    if min_obj:
+                        for obj in min_obj:
+                                seeded_list[seed][obj] = [1 - x for x in seeded_list[seed][obj]]
+
+                    # combine the objectives
+                    seeded_list[seed]["comb_obj"] = sum(objective_weights[obj] * np.array(seeded_list[seed][obj])
+                                                        for obj in objectives).tolist()
+                    # calculate the scope score
+                    if type_results.lower() == "scope":
+                        seeded_list[seed]["scope"] = [Benchmark.calculate_scope_score(comb_obj,vendi,scope_method) for comb_obj,vendi in zip(seeded_list[seed]["comb_obj"],seeded_list[seed]["vendi"])]
+
+                stacked = np.stack([d[type_results.lower()] for d in seeded_list], axis=0)
+                processed_mean = np.mean(stacked, axis=0).tolist()
+                if seeds > 1:
+                    processed_stdev  = np.std(stacked, axis=0, ddof=1).tolist()  # using Bessel's correction
+                else:
+                    processed_stdev  = np.std(stacked, axis=0).tolist()  # no correction if single seed
+
+            dict_unscaled_mean[combi] = processed_mean
+            dict_unscaled_stdev[combi] = processed_stdev
+
+        # ensure all results lists have the same length by appending np.NaN
+        max_len = max(len(v) for v in dict_unscaled_mean.values())
+        dict_unscaled_mean = {k: v + [np.nan] * (max_len - len(v)) for k, v in dict_unscaled_mean.items()}
+        dict_unscaled_stdev = {k: v + [np.nan] * (max_len - len(v)) for k, v in dict_unscaled_stdev.items()}
+
+        # convert to dfs
+        dfs_unscaled = {}
+        dfs_unscaled["means"] = pd.DataFrame.from_dict(dict_unscaled_mean)
+        dfs_unscaled["stdev"] = pd.DataFrame.from_dict(dict_unscaled_stdev)
+
+        #  The data is currently shown per batch (which can be different for the different runs). Still needs to be "scaled" to the number of experiments. 
+        dfs_scaled = {}
+        for metric,df in dfs_unscaled.items():
+            dfs_scaled[metric] = pd.DataFrame(np.nan,[x+1 for x in range(budget)],df.columns)  # create empty dataframe with the right shape
+            for column_nr in range(len(df.columns)):
+                batch_sizes = batch_sizes_list[column_nr]  # batch sizes for each round
+                nr_experiments = [sum(batch_sizes[:round+1]) for round in range(len(batch_sizes))]  # total number of experiments including for each round
+                for entry in range(len(df.index)):
+                    if pd.notna(df.iloc[entry,column_nr]):  # check that the value is actually numeric and not nan
+                        dfs_scaled[metric].iloc[nr_experiments[entry]-1, column_nr] = df.iloc[entry,column_nr]  # -1 because iloc is 0-indexed
+
+        # clean up
+        for key in dfs_scaled.keys():
+            dfs_scaled[key].dropna(how="all",inplace=True)
+            dfs_scaled[key] = dfs_scaled[key][sorted(dfs_scaled[key].columns)]
+
+        return dfs_scaled, type_results
+
 
 
     
