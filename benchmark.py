@@ -1509,7 +1509,7 @@ class Benchmark:
 
             # case when a specific objective (or the only one) or the vendi score is requested
             if type_results.lower() not in ["scope","objective"] or (type_results.lower() == "objective" and len(objectives) == 1):
-                if type_results == "objective":
+                if type_results.lower() == "objective":
                     type_results = objectives[0]  # reassign with the name of the only objective
                 stacked = np.stack([d[type_results.lower()] for d in seeded_list], axis=0)
                 processed_mean = np.mean(stacked, axis=0).tolist()
