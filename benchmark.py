@@ -52,6 +52,8 @@ class Benchmark:
             draw the selected compounds
         feature_analysis:
             SHAP analysis of the surrogate model for a scope
+        objective_distribution:
+            analyze the distribution of objective values in a scope
 
     Utility functions:
         normalization:
@@ -676,7 +678,7 @@ class Benchmark:
         print(f"Data collection finished! Results are saved in the subfolder {name_results}.")
 
 
-    def heatmap_plot(self,type_results, name_results, budget, scope_method = "geometric_mean",objective_mode = {"all_obj":"max"}, objective_weights=None,
+    def heatmap_plot(self,type_results, name_results, budget, scope_method = "product",objective_mode = {"all_obj":"max"}, objective_weights=None,
                     bounds = {"rate":(2.349,1.035),"vendi":(6.366,1.941)},filename=None, show_plot=True,directory = '.'):
         """
         Generates and saves a heatmap plot for the requested result type across different batch sizes and Vendi_pruning_fractions.
@@ -696,7 +698,7 @@ class Benchmark:
             budget: int
                 experimental budget used in the runs
             scope_method: str
-                method to calculate the scope score ("average","product","geometric_mean" (Default))
+                method to calculate the scope score ("average","product" (Default),"geometric_mean")
             objective_mode: dict
                 Dictionary of objective modes for objectives
                 Provide dict with value "min" in case of a minimization task (e. g. {"cost":"min"})
@@ -722,7 +724,7 @@ class Benchmark:
         
         # Get the overview for the requested data
         dfs_scaled, type_results = self.get_metric_overview(wdir,budget,type_results, name_results, scope_method, objective_mode,
-                    objective_weights, bounds)
+                    objective_weights, bounds,directory)
         
         means = dfs_scaled["means"]
         
@@ -752,7 +754,7 @@ class Benchmark:
         return df_heatmap
     
 
-    def progress_plot(self,budget,type_results, name_results, scope_method= "geometric_mean", objective_mode = {"all_obj":"max"},
+    def progress_plot(self,budget,type_results, name_results, scope_method= "product", objective_mode = {"all_obj":"max"},
                         objective_weights=None, bounds = {"rate":(2.349,1.035),"vendi":(6.366,1.941)},filename_figure = None, 
                         directory=".",show_plot=True,show_stdev=True):
             """
@@ -773,7 +775,7 @@ class Benchmark:
                 name_results: str
                     Name of the subfolder in which the result csv files are saved.
                 scope_method: str
-                    method to calculate the scope score ("average","product","geometric_mean" (Default))
+                    method to calculate the scope score ("average","product" (Default),"geometric_mean" )
                 objective_mode: dict
                     Dictionary of objective modes for objectives
                     Provide dict with value "min" in case of a minimization task (e. g. {"cost":"min"})
@@ -801,7 +803,7 @@ class Benchmark:
 
             # Get the overview for the requested data
             dfs_scaled, type_results = self.get_metric_overview(wdir,budget,type_results, name_results, scope_method, objective_mode,
-                        objective_weights, bounds)
+                        objective_weights, bounds,directory)
 
             # Plot and save the figure if requested.
             if show_plot:
@@ -847,7 +849,7 @@ class Benchmark:
             return dfs_scaled["means"], dfs_scaled["stdev"]  # return the data
 
 
-    def track_samples(self,filename_umap, filename_data,name_results,scope_method="geometric_mean", 
+    def track_samples(self,filename_umap, filename_data,name_results,scope_method="product", 
                       objective_mode = {"all_obj":"max"}, objective_weights=None, 
                       bounds = {"rate":(2.349,1.035),"vendi":(6.366,1.941)},display_cut_samples=True, obj_to_display = None, 
                       rounds_to_display = None, label_round=False,filename_figure=None,restrict_samples=None,directory='.'):
@@ -866,7 +868,7 @@ class Benchmark:
             name_results: str
                 subfolder in which the results are located
             scope_method: str
-                method to calculate the scope score ("average","product","geometric_mean" (Default))
+                method to calculate the scope score ("average","product" (Default),"geometric_mean")
             objective_mode: dict
                 Dictionary of objective modes for objectives
                 Provide dict with value "min" in case of a minimization task (e. g. {"cost":"min"})
@@ -1237,6 +1239,85 @@ class Benchmark:
                                    directory=directory)
         
         return shap_values,mean_abs_shap_values
+    
+
+    @staticmethod
+    def objective_distribution(name_results, objective_bounds = (0,100), nr_bins = 10, directory = ".", print_figure = True):
+        """
+        Compute and visualize the distribution of objective values across the different random seeds.
+        NOTE: Currently only supports single-objective optimization.
+
+        Parameters
+        ----------
+        name_results : str
+            Path to the result folder containing the subfolder ``raw_data`` with 
+            CSV files of raw optimization data.
+        objective_bounds : tuple of (float, float)
+            Lower and upper bounds of the objective value range for binning.
+            Default is (0, 100).
+        nr_bins : int
+            Number of equally spaced bins to divide the objective range into.
+            Default is 10.
+        directory : str
+            Working directory. Default is current directory.
+        print_figure : bool
+            If True, generate a bar plot showing the average counts per bin and
+            error bars corresponding to the standard deviation across runs.
+            Default is True.
+
+        Returns
+        -------
+        df_counts : pandas.DataFrame
+            A dataframe where each row corresponds to one run and each column 
+            contains the counts of objective values falling into each bin.
+        """
+
+
+        wdir = Path(directory)
+        raw_path = wdir / name_results / "raw_data"
+
+        # find the objectives
+        objectives = Benchmark_testing.find_objectives(name_results,directory)
+
+        # define the bins
+        bins = np.linspace(objective_bounds[0],objective_bounds[1],nr_bins+1)
+
+        # list to store the count results
+        counts = []
+
+        # go through all the raw files in the original folder
+        for file in os.listdir(raw_path):
+
+            # read in the raw data file
+            df_raw = pd.read_csv(raw_path / file, index_col = 0, header = 0)
+
+            # get the objective values of each entry
+            df_raw[f"obj_values {objectives}"] = df_raw[f"obj_values {objectives}"].apply(ast.literal_eval)
+            obj_values = [value for round_list in [df_raw.loc[round,f"obj_values {objectives}"] for round in df_raw.index] for value in round_list]
+
+            # get the counts for the bins
+            counts.append(np.histogram(obj_values,bins=bins)[0])
+
+        # convert to df
+        df_counts = pd.DataFrame(counts).fillna(0)
+        bin_centers = (bins[:-1] + bins[1:]) / 2
+        df_counts.columns = bin_centers
+
+        # print the average distribution and its standard deviation if requested
+        if print_figure:
+            mean_counts = df_counts.mean()
+            std_counts = df_counts.std(ddof=1)  # using Bessel's correction
+
+            plt.figure(figsize=(8,6))
+            plt.bar(bin_centers, mean_counts, width=(bins[1]-bins[0]), yerr=std_counts, capsize=5, alpha=0.7, color='skyblue', edgecolor='black')
+            plt.xlabel(f'{objectives[0].capitalize()} value')
+            plt.ylabel('Average Count')
+            plt.title('Average Objective Distribution with Standard Deviation')
+            plt.xticks(bins)
+            plt.grid(axis='y')
+            plt.show()
+        
+        return df_counts
 
 
     @staticmethod
@@ -1305,7 +1386,7 @@ class Benchmark:
         return scope_score
           
 
-    def results_for_run_conti(self,budget,type_results, name_results, scope_method="geometric_mean",scale_to_exp=True, directory="."):
+    def results_for_run_conti(self,budget,type_results, name_results, scope_method="product",scale_to_exp=True, directory="."):
         """
         Adapted version of progress_plot() to get the progress of the different metrics for a continue_data_collection() run.
         NOTE: Only works if there is just one run (can have multiple seeds) in the name_results folder.
@@ -1318,7 +1399,7 @@ class Benchmark:
         name_results: str
             folder with results to be analyzed
         scope_method: str
-            method to calculate the scope score ("average","product","geometric_mean" (Default))
+            method to calculate the scope score ("average","product" (Default),"geometric_mean")
         scale_to_exp: Boolean
             option to display the results by round (False) or number of experiments (True; Default)
         directory: str
@@ -1407,7 +1488,7 @@ class Benchmark:
     
     
     @staticmethod
-    def find_objectives(folder_name):
+    def find_objectives(folder_name,directory):
 
         """
         Helper function to find the names of the objectives in the raw results.
@@ -1431,7 +1512,7 @@ class Benchmark:
 
     @staticmethod
     def get_metric_overview(wdir,budget,type_results, name_results, scope_method, objective_mode,
-                        objective_weights, bounds):
+                        objective_weights, bounds,directory):
         """
         Helper function to calculate a metric overview for the functions progress_plot() and heatmap_plot().
         See these functions for an overview of the function parameters.
@@ -1459,7 +1540,7 @@ class Benchmark:
                 setting_dict[combi].append(file)
 
         # get the objective names
-        objectives = Benchmark.find_objectives(name_results)
+        objectives = Benchmark.find_objectives(name_results,directory)
 
         # go through all the different hyperparameter settings
         batch_sizes_list = []
