@@ -1277,7 +1277,7 @@ class Benchmark:
         raw_path = wdir / name_results / "raw_data"
 
         # find the objectives
-        objectives = Benchmark_testing.find_objectives(name_results,directory)
+        objectives = Benchmark.find_objectives(name_results,directory)
 
         # define the bins
         bins = np.linspace(objective_bounds[0],objective_bounds[1],nr_bins+1)
