@@ -1,4 +1,5 @@
 import ast
+import colorsys
 import os
 from pathlib import Path
 import re
@@ -7,6 +8,8 @@ import sys
 
 from IPython.display import display
 import matplotlib as mpl
+import matplotlib.colors as mcolors
+from matplotlib.colors import ListedColormap, LinearSegmentedColormap
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -58,6 +61,8 @@ class Benchmark:
             SHAP analysis of the surrogate model for a scope
         objective_distribution:
             analyze the distribution of objective values in a scope
+        get_metric_overview:
+
 
     Utility functions:
         normalization:
@@ -68,11 +73,42 @@ class Benchmark:
             calculate scope scores
         find_objectives:
             look up the objectives that were used in a scope
+        _adjust_lightness:
+            adjust the lightness of a color. Used for colormap definition.
 
     """
 
+
     def __init__(self):
-        pass
+        
+        # Define colormaps for plotting
+
+        doyle_colors = ["#CE4C6F", "#1561C2", "#188F9D","#C4ADA2","#515798", "#CB7D85", "#A9A9A9"]
+        # extension of palette with lighter and darker versions
+
+        lighter = [self._adjust_lightness(c, 1.2) for c in doyle_colors]
+        darker  = [self._adjust_lightness(c, 0.7) for c in doyle_colors]
+        self.all_colors = doyle_colors + darker[::-1] + lighter[::-1] 
+
+        # Save the categorical colormap
+        self.cat_cmap = ListedColormap(self.all_colors, name="Doyle_cat")
+
+        # Define and save a continuous colormap
+        colors = [doyle_colors[1],"#FFFFFFD1",doyle_colors[0]]
+        self.cont_cmap = LinearSegmentedColormap.from_list("Doyle_cont", colors)
+
+    
+    @staticmethod
+    def _adjust_lightness(color, factor=1.2):
+        """
+        Helper function to make colors lighter (factor > 1) or darker (factor < 1).
+        Used for colormap definition.
+        """
+        r, g, b = mcolors.to_rgb(color)
+        h, l, s = colorsys.rgb_to_hls(r, g, b)
+        l = max(0, min(1, l * factor))
+        r, g, b = colorsys.hls_to_rgb(h, l, s)
+        return mcolors.to_hex((r, g, b))
 
     
     def collect_data(self, filename_labelled, objectives, objective_mode,
@@ -560,7 +596,8 @@ class Benchmark:
             plt.figure(figsize=(10,3))
             if type_results == "comb_obj":
                 type_results = "Combined objective"
-            heatmap = sns.heatmap(df_heatmap,annot=True, fmt=".3f", linewidths=1,cmap='crest',cbar_kws={'label': f"{type_results} score"})
+            heatmap = sns.heatmap(df_heatmap,annot=True, fmt=".3f", linewidths=1,cmap=self.cont_cmap,
+                                  cbar_kws={'label': f"{type_results} score"})
             heatmap.set(xlabel="Vendi pruning fraction in %", ylabel="batch size")
             heatmap.tick_params(length=0)
             plt.show()
@@ -634,7 +671,7 @@ class Benchmark:
 
                 fig, ax = plt.subplots(figsize=(6,6))
                 
-                for col in means.columns:
+                for i,col in enumerate(means.columns):
                     x    = means.index.values
                     mean = means[col].values
                     std  = stds[col].values
@@ -645,7 +682,7 @@ class Benchmark:
                     mask = ~np.isnan(mean) & ~np.isnan(std) & ~np.isnan(maxval) & ~np.isnan(minval)
                     x, mean, std, maxval, minval = x[mask], mean[mask], std[mask], maxval[mask], minval[mask]
 
-                    color = ax._get_lines.get_next_color()
+                    color = self.all_colors[i]
                     ax.plot(x, mean, label=col, color=color)
                     if show_stats == "stdev":
                         ax.fill_between(x, mean - std, mean + std, alpha=0.1, color=color)
@@ -834,11 +871,11 @@ class Benchmark:
         plt.figure(figsize=(10,8))
 
         if display_cut_samples:  # color by round
-            colormap = 'crest'
+            colormap = self.cont_cmap
             # Plot the non-selected points first
             plot = sns.scatterplot(
                 data=df_umap[df_umap['round'] == 0], x="UMAP1", y="UMAP2", s=40,
-                color='silver', style="status", marker="o",legend=False, alpha = 0.6,
+                color=self.all_colors[6], style="status", marker="o",legend=False, alpha = 0.6,
                 style_order=["suggested", "removed", "neutral"])
 
             # Plot the cut points
@@ -871,10 +908,11 @@ class Benchmark:
             vmin = obj_plot_bounds[1]
             vmax = obj_plot_bounds[0]
             norm = plt.Normalize(vmin, vmax)
-            cmap = sns.color_palette("vlag", as_cmap=True)
+            # cmap = sns.color_palette("Doyle_cont", as_cmap=True)
+            cmap = self.cont_cmap
 
             # Plot non-numeric entries ("PENDING")
-            plt.scatter(df_pending["UMAP1"], df_pending["UMAP2"], color="silver", s=20, alpha=0.6)
+            plt.scatter(df_pending["UMAP1"], df_pending["UMAP2"], color=self.all_colors[6], s=20, alpha=0.6)
 
             # Plot numeric entries
             scatter_numeric = plt.scatter(df_selected["UMAP1"],df_selected["UMAP2"],c=df_selected[obj_plot_name],cmap=cmap,norm=norm,s=100,alpha=1,edgecolor='k',linewidth=1)
@@ -1135,7 +1173,8 @@ class Benchmark:
             std_counts = df_counts.std(ddof=1)  # using Bessel's correction
 
             plt.figure(figsize=(8,6))
-            plt.bar(bin_centers, mean_counts, width=(bins[1]-bins[0]), yerr=std_counts, capsize=5, alpha=0.7, color='skyblue', edgecolor='black')
+            plt.bar(bin_centers, mean_counts, width=(bins[1]-bins[0]), yerr=std_counts, 
+                    capsize=5, alpha=0.7, color=self.all_colors[1], edgecolor='k')
             plt.xlabel(f'{objectives[0].capitalize()} value')
             plt.ylabel('Average Count')
             if norm_axis is not None:
@@ -1147,33 +1186,6 @@ class Benchmark:
         
         return df_counts
 
-
-    # @staticmethod
-    # def normalization(score,results_type="obj",vendi_bounds=(6.322194,1.975986),obj_bounds=(2.295611,1.176657)):
-    #     """
-    #     Helper function:
-    #     Function to normalize Vendi scores and average objectives.
-    #     Input:
-    #         score: float or int
-    #             result to be processed
-    #         type: str
-    #             type of results to be processed.
-    #             Options:
-    #                 "vendi": Vendi scores
-    #                 "obj": average objectives (Default)
-    #         vendi_bounds: tuple
-    #             upper and lower bounds (in that order) of the vendi scores for the normalization
-    #             Default values are for the ArI dataset (without processing).
-    #         obj_bounds: tuple
-    #             upper and lower bounds (in that order) of the average objectives for the normalization
-    #             Default values are for the ArI dataset.
-    #     """
-    #     if "obj" in results_type.lower():
-    #         return (score-obj_bounds[1])/(obj_bounds[0]-obj_bounds[1])
-    #     elif results_type.lower() == "vendi":
-    #         return (score-vendi_bounds[1])/(vendi_bounds[0]-vendi_bounds[1])
-    #     else:
-    #         return print("No valid type provided for the normalization!")
 
     @staticmethod
     def normalization(score,bounds):
