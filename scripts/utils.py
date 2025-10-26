@@ -293,23 +293,21 @@ def variance_pruning(idx_test,n_objectives,Vendi_pruning_fraction,cumulative_tes
     return cumulative_test_x, cut_by_vendi, idx_test
 
 
-def SHAP_analysis(objectives,objective_mode,filename,plot_type,directory):
+def SHAP_analysis(objectives,
+                  objective_mode,
+                  filename,
+                  plot_type = ["bar"],
+                  directory = "."):
     """
     Analyzes the importance of features on the surrogate model using SHAP.
     ---------------------------------------------------------------------
     Inputs:
         filename: str
             filename of the reaction space csv file including experimental outcomes
-            default is reaction_space.csv
         objectives: list
             list of the objectives. E. g.: [yield,ee]
         objective_mode: list
             list of the mode of the objectives (max or min)
-        directory: str
-            name of the working directory.
-            Default is the current directory.
-        seed: int  
-            random seed
         plot_type: list of str
             type of SHAP plot to be generated. Options:
                 "bar" - bar plot of mean absolute SHAP values (Default)
@@ -350,9 +348,12 @@ def SHAP_analysis(objectives,objective_mode,filename,plot_type,directory):
 
     # Scaling of training outputs. 
     train_y_np = df_train_y.astype(float).to_numpy()
-    for i in range(len(objectives)):
-        if objective_mode[i].lower() == 'min':
+    min_obj = [obj for obj, value in objective_mode.items() if value == "min"]
+    if min_obj:
+        for obj in min_obj:
+            i = objectives.index(obj)
             train_y_np[:, i] = -train_y_np[:, i]
+
     scaler_y = EDBOStandardScaler()
     train_y_np = scaler_y.fit_transform(train_y_np)
     cumulative_train_y = train_y_np.tolist()

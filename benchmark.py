@@ -111,10 +111,10 @@ class Benchmark:
         return mcolors.to_hex((r, g, b))
 
     
-    def collect_data(self, filename_labelled, objectives, objective_mode,
-            seeds, name_results, init_sampling_method="random", Vendi_pruning_fractions = [None], batches=[None],budget=25, objective_weights = None, sample_threshold = None, 
-            enforce_dissimilarity=False, pruning_metric = "vendi_sample", acquisition_function_mode = 'greedy', 
-            dft_filename = None, filename_prediction = "df_benchmark.csv", directory='.'):
+    def collect_data(self, filename_labelled, objectives, seeds, name_results, 
+                     objective_mode = {"all_obj":"max"}, init_sampling_method="random", Vendi_pruning_fractions = [13], batches=[3], budget=27, 
+            objective_weights = None, sample_threshold = None, enforce_dissimilarity=False, pruning_metric = "vendi_batch", 
+            acquisition_function_mode = 'balanced', dft_filename = None, filename_prediction = "df_benchmark.csv", directory='.'):
         """
         Runs the function for selected parameter ranges and records the results per round for each set of parameters.
 
@@ -155,8 +155,6 @@ class Benchmark:
             Default: "df_benchmark.csv"
         objective: list
             list indicating the column name for the objective (string)
-        objective_mode: list
-            list containing the mode of the objective (string): "max" or "min"      
         budget: int
             experimental budget
         init_sampling_method: str
@@ -168,6 +166,11 @@ class Benchmark:
             list of batch sizes (as int numbers)
         seeds: list
             list of seed values
+        objective_mode: dict
+            Dictionary of objective modes for objectives
+            Provide dict with value "min" in case of a minimization task (e. g. {"cost":"min"})
+            Code will assume maximization for all non-listed objectives
+            Default is {"all_obj":"max"} --> all objectives are maximized   
         name_results: str
             name of the folder in which the results will be saved
         Vendi_pruning_fractions: list
@@ -915,7 +918,8 @@ class Benchmark:
             plt.scatter(df_pending["UMAP1"], df_pending["UMAP2"], color=self.all_colors[6], s=20, alpha=0.6)
 
             # Plot numeric entries
-            scatter_numeric = plt.scatter(df_selected["UMAP1"],df_selected["UMAP2"],c=df_selected[obj_plot_name],cmap=cmap,norm=norm,s=100,alpha=1,edgecolor='k',linewidth=1)
+            scatter_numeric = plt.scatter(df_selected["UMAP1"],df_selected["UMAP2"],c=df_selected[obj_plot_name],
+                                          cmap=cmap,norm=norm,s=100,alpha=1,edgecolor='k',linewidth=1)
 
             # Add colorbar
             cbar = plt.colorbar(scatter_numeric)
@@ -924,7 +928,8 @@ class Benchmark:
         if label_round:  # label the round of selection if requested
             texts = []
             for i in df_umap[df_umap["status"]== "suggested"].index:
-                texts.append(plt.text(df_umap.loc[i,'UMAP1'], df_umap.loc[i,'UMAP2'], int(df_umap.loc[i,'round']), size='medium', color='black', weight='semibold'))
+                texts.append(plt.text(df_umap.loc[i,'UMAP1'], df_umap.loc[i,'UMAP2'], int(df_umap.loc[i,'round']), 
+                                      size='medium', color='black', weight='semibold'))
             adjust_text(texts,expand_points=(1.3,1.3),force_static=(10,10),arrowprops={"arrowstyle":"-","color":"black"})
         plt.xlabel("UMAP1")
         plt.ylabel("UMAP2")
@@ -1103,8 +1108,7 @@ class Benchmark:
         return shap_values,mean_abs_shap_values
     
 
-    @staticmethod
-    def objective_distribution(name_results, objective_bounds = (0,100), nr_bins = 10, norm_axis = None, directory = ".", print_figure = True):
+    def objective_distribution(self,name_results, objective_bounds = (0,100), nr_bins = 10, norm_axis = None, directory = ".", print_figure = True):
         """
         Compute and visualize the distribution of objective values across the different random seeds.
         NOTE: Currently only supports single-objective optimization.
@@ -1174,14 +1178,14 @@ class Benchmark:
 
             plt.figure(figsize=(8,6))
             plt.bar(bin_centers, mean_counts, width=(bins[1]-bins[0]), yerr=std_counts, 
-                    capsize=5, alpha=0.7, color=self.all_colors[1], edgecolor='k')
+                    capsize=5, alpha=1, color=self.all_colors[1], edgecolor='k',zorder =2)
             plt.xlabel(f'{objectives[0].capitalize()} value')
             plt.ylabel('Average Count')
             if norm_axis is not None:
                 plt.ylim(0, norm_axis)
             plt.title('Average Objective Distribution with Standard Deviation')
             plt.xticks(bins)
-            plt.grid(axis='y')
+            plt.grid(axis='y',zorder=1)
             plt.show()
         
         return df_counts

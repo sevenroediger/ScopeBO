@@ -77,18 +77,20 @@ class ScopeBO:
     
 
     @staticmethod
-    def feature_analysis(objectives,objective_mode,filename,plot_type=["bar"],directory="."):
+    def feature_analysis(objectives,filename,objective_mode = {"all_obj":"max"}, plot_type=["bar"],directory="."):
         """
         Analyzes the importance of features on the surrogate model using SHAP.
         ---------------------------------------------------------------------
         Inputs:
-            filename: str
-                filename of the reaction space csv file including experimental outcomes
-                default is reaction_space.csv
             objectives: list
                 list of the objectives. E. g.: [yield,ee]
-            objective_mode: list
-                list of the mode of the objectives (max or min)
+            filename: str
+                filename of the reaction space csv file including experimental outcomes
+            objective_mode: dict
+                Dictionary of objective modes for objectives
+                Provide dict with value "min" in case of a minimization task (e. g. {"cost":"min"})
+                Code will assume maximization for all non-listed objectives
+                Default is {"all_obj":"max"} --> all objectives are maximized
             plot_type: list of str
                 type of SHAP plot to be generated. Options:
                     "bar" - bar plot of mean absolute SHAP values (Default)
@@ -233,7 +235,9 @@ class ScopeBO:
         return df
     
     def run(self,
-            objectives, objective_mode, objective_weights=None,
+            objectives, 
+            objective_mode = {"all_obj":"max"}, 
+            objective_weights=None,
             directory='.', filename='reaction_space.csv',
             batch=None, init_sampling_method='random', seed=42,
             Vendi_pruning_fraction=None,
@@ -256,13 +260,11 @@ class ScopeBO:
             list of strings containing the name for each objective.
             Example:
                 objectives = ['yield', 'cost', 'impurity']
-        objective_mode: list
-            list to select whether the objective should be maximized or minimized.
-            Examples:
-                A) Example for single-objective optimization:
-                    objective_mode = ['max']
-                B) Example for multi-objective optimization:
-                    objective_mode = ['max', 'min', 'min']
+        objective_mode: dict
+            Dictionary of objective modes for objectives
+            Provide dict with value "min" in case of a minimization task (e. g. {"cost":"min"})
+            Code will assume maximization for all non-listed objectives
+            Default is {"all_obj":"max"} --> all objectives are maximized
         objective_weights: list
             list of float weights for the scalarization of the objectives 
             only relevant for multi-objective greedy runs, not other acquisition functions
@@ -328,17 +330,6 @@ class ScopeBO:
         # Check if objectives is a list (even for single objective optimization).
         if type(objectives) != list:
             objectives = [objectives]
-        if type(objective_mode) != list:
-            objective_mode = [objective_mode]
-
-        
-        # Check if the objective modes were provided correctly
-        msg = "Each objective mode must be either 'max' for maximization or 'min' for minimization. Please check your input."
-        assert (all(mode.lower() in {"max", "min"} for mode in objective_mode)),msg
-
-        # Assert that the number of objectives and objective modes matches
-        msg = "The number of objective modes and objectives does not match. Please check your input."
-        assert (len(objectives) == len(objective_mode)),msg
 
         # Assert that the correct number of weights are given if they are provided
         if objective_weights is not None:
@@ -597,12 +588,14 @@ class ScopeBO:
         # Scaling of training outputs. 
         # Also convert minimization problems to pseudo-maximization problem by negating the output values.
         train_y_np = df_train_y.astype(float).to_numpy()
-        for i in range(0, n_objectives):
-            if objective_mode[i].lower() == 'min':
+        min_obj = [obj for obj, value in objective_mode.items() if value == "min"]
+        if min_obj:
+            for obj in min_obj:
+                i = objectives.index(obj)
                 train_y_np[:, i] = -train_y_np[:, i]
+
         scaler_y = EDBOStandardScaler()
         train_y_np = scaler_y.fit_transform(train_y_np)
-
 
         best_samples = []  # list to hold the suggested experiments
         next_samples = []  # list to hold the next-best experiments as alternatives
