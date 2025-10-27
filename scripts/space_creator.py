@@ -116,10 +116,10 @@ def feature_preprocessing(df):
     Function for removing non-varied and highly correlated features.
     Take a df as input and returns it in processed form.
     """
-    # Remove columns that have only one or two unique values.
+    # Remove columns that have only one unique value.
     removed_columns = []
     for column in df.columns:
-        if len(np.unique(df[column].values)) <= 2:
+        if len(np.unique(df[column].values)) <= 1:
             removed_columns.append(column)
     df = df.drop(removed_columns, axis=1)
     
