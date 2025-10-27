@@ -16,7 +16,7 @@ from .utils import SHAP_analysis
 def regression_modeling(filename, objective, 
                         further_objectives = None, n_feat = 3,
                         repeats_outer = 5, k_outer = 4, 
-                        repeats_inner = 10, k_inner = 10, 
+                        repeats_inner = 10, k_inner = 5, 
                         fname_shap = "df_shap.csv",
                         feature_cutoff = 20, corr_cutoff = 0.7,
                         fname_pred = "mlr_predictions.csv",
@@ -233,20 +233,17 @@ def regression_modeling(filename, objective,
     scaler = StandardScaler()
     X_sc = pd.DataFrame(scaler.fit_transform(X), 
                                 columns = X.columns)
-    model_sc = LinearRegression().fit(X_sc[champion_feat], y)
-    model_nat = LinearRegression().fit(X[champion_feat],y)
+    model = LinearRegression().fit(X_sc[champion_feat], y)
+
+    model_settings = {f: c for f, c in zip(champion_feat, model.coef_)}
+    model_settings["Intercept"] = model.intercept_
 
     print("Model training completed.\n\nHere are the model parameters using scaled features:")
-    print("Intercept:", model_sc.intercept_)
-    for i in range(len(champion_feat)):
-        print(f"{champion_feat[i]}: {model_sc.coef_[i]}")
 
-    print("\nHere are the model parameters using natural, unscaled features:")
-    print("Intercept:", model_nat.intercept_)
-    for i in range(len(champion_feat)):
-        print(f"{champion_feat[i]}: {model_nat.coef_[i]}")
+    for k, v in model_settings.items():
+        print(f"{k}: {v}")
 
-    print("\nModel statistics (using scaled features):")
+    print("\nModel statistics:")
 
     # TODO: add statistics!!!
 
@@ -260,7 +257,7 @@ def regression_modeling(filename, objective,
     df_exp_sc = pd.DataFrame(scaler.transform(df_exp), columns = df_exp.columns)
 
     # predict
-    pred_vals = model_sc.predict(df_exp_sc[champion_feat])
+    pred_vals = model.predict(df_exp_sc[champion_feat])
 
     # report the predictions
     df_pred = pd.DataFrame(np.nan, index = df_exp.index, columns = [objective, f"{objective}_pred"])
@@ -275,7 +272,7 @@ def regression_modeling(filename, objective,
     else:
         print("Predictions obtained!")
 
-    return df_pred
+    return df_pred, model_settings
 
 
 def _SHAP_pruning(X, df_exp, curr_feat, all_obj, fname_shap, feat_cutoff, wdir):

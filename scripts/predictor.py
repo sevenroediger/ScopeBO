@@ -119,7 +119,7 @@ class ScopeBO:
     def predict_performance(filename, objective, 
                         further_objectives = None, n_feat = 3,
                         repeats_outer = 5, k_outer = 4, 
-                        repeats_inner = 10, k_inner = 10, 
+                        repeats_inner = 10, k_inner = 5, 
                         fname_shap = "df_shap.csv",
                         feature_cutoff = 20, corr_cutoff = 0.7,
                         fname_pred = "mlr_predictions.csv",
