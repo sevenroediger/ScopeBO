@@ -1042,8 +1042,13 @@ class Benchmark:
 
 
     @staticmethod
-    def feature_analysis(filename,filename_labelled,objectives,objective_mode,
-                           filename_shap="df_shap.csv",plot_type=["bar"],directory="."):
+    def feature_analysis(filename,
+                         filename_labelled,
+                         objectives,
+                         objective_mode = {"all_obj":"max"},
+                         filename_shap="df_shap.csv",
+                         plot_type=["bar"],
+                         directory="."):
         
         """
         Wrapper for the ScopeBO().feature_analysis() function to get feature importance using SHAP
@@ -1057,8 +1062,11 @@ class Benchmark:
                 filename of the fully labelled reaction space csv file
             objectives: list
                 list of the objectives. E. g.: [yield,ee]
-            objective_mode: list
-                list of the mode of the objectives (max or min). E.g.: ["max","max"]
+            objective_mode: dict
+                Dictionary of objective modes for objectives
+                Provide dict with value "min" in case of a minimization task (e. g. {"cost":"min"})
+                Code will assume maximization for all non-listed objectives
+                Default is {"all_obj":"max"}
             filename_shap: str
                 The function generates a csv file as input for the ScopeBO().feature_analysis() function.
                 Parameter defines the name of that file.
@@ -1268,8 +1276,8 @@ class Benchmark:
     
 
     @staticmethod
-    def get_metric_overview(bounds, budget, name_results, type_results, scope_method = "product", objective_mode = {"all_obj":"max"},
-                        objective_weights = None, directory = "."):
+    def get_metric_overview(bounds, budget, name_results, type_results, scope_method = "product", 
+                            objective_mode = {"all_obj":"max"}, objective_weights = None, directory = "."):
         """
         Helper function to calculate a metric overview for the functions progress_plot() and heatmap_plot().
         See these functions for an overview of the function parameters.
