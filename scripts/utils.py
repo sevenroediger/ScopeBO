@@ -336,7 +336,7 @@ def SHAP_analysis(objectives,
 
     # prepare x and y data for BO model by removing objectives and priority columns for the BO model inputs
     df_train_y = df.loc[idx_train][objectives]
-    if 'priority' in df.columns.tolist():
+    if 'priority' in df.columns.to_list():
         df = df.drop(columns=['priority'])
     df = df.drop(columns=objectives)
     df_train_x = df.loc[idx_train]
