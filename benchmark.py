@@ -23,6 +23,19 @@ from scripts.predictor  import ScopeBO
 from scripts.utils import calculate_vendi_score, obtain_full_covar_matrix
 
 
+# General plt parameters
+plt.rcParams.update({
+    "axes.titlesize": 20,        # Subplot title
+    "axes.labelsize": 16,        # X and Y labels
+    "figure.titlesize": 24,      # Suptitle
+    "xtick.labelsize": 14,       # X tick labels
+    "ytick.labelsize": 14,       # Y tick labels
+    "legend.fontsize": 14,       # Legend text
+    "legend.title_fontsize": 14, # Legend titles
+    "font.family": "Helvetica"   # Font
+    })
+
+
 class HiddenPrints:
     def __enter__(self):
         self._original_stdout = sys.stdout
@@ -196,7 +209,7 @@ class Benchmark:
         if not os.path.exists(wdir.joinpath(name_results)):
             # Create the folder
             os.makedirs(wdir.joinpath(name_results))
-        if not os.path.exists(wdir.joinpath(name_results+"/raw_data")):
+        if (not os.path.exists(wdir.joinpath(name_results+"/raw_data"))) and (specific_seed is None):
             # Create the folder
             os.makedirs(wdir.joinpath(name_results+"/raw_data"))
 
@@ -543,6 +556,7 @@ class Benchmark:
 
                     # record the evaluated samples in the df of the new featurization
                     for sample in samples:
+                        sample = str(sample.encode().decode('unicode_escape'))
                         for objective in objectives:
                             df_Vendi.loc[sample,objective] = df_labelled.loc[sample,objective]
 
@@ -644,7 +658,7 @@ class Benchmark:
 
     def progress_plot(self,budget,type_results, name_results, scope_method= "product", objective_mode = {"all_obj":"max"},
                         objective_weights=None, bounds = {"rate":(2.349,1.035),"vendi":(6.366,1.941)},filename_figure = None, 
-                        directory=".",show_plot=True,show_stats=None):
+                        directory=".",show_plot=True,show_stats=None, specified_batch_size = None):
             """
             Generates a result(number of experimenst) y(x)-plot for the requested results.
             Options for displayed results: scope score ("scope"), vendi score ("vendi"), weighted objectives ("objective", normalized if multiple objectives),
@@ -689,13 +703,17 @@ class Benchmark:
                         "stdev": Standard deviation.
                         "min-max": Max and Min values.
                     Default is None.
+                specified_batch_size: int or None
+                    the code normally infers the batch size from the filename. If a file is name anormally
+                    so that this is not possible, the batch size can be specified with this variable.
+                    Default is None --> infer the batch size from the filename
             """
 
             wdir = Path(directory)
 
             # Get the overview for the requested data
             dfs_scaled,_ = self.get_metric_overview(bounds, budget, name_results, type_results, scope_method, objective_mode,
-                            objective_weights, directory)
+                            objective_weights, directory, specified_batch_size)
 
             # Plot and save the figure if requested.
             if show_plot:
@@ -728,12 +746,11 @@ class Benchmark:
                         ax.plot(x, maxval, linestyle="--", color=color, alpha=0.3)
                         ax.plot(x, minval, linestyle="--", color=color, alpha=0.3)
                 
-                ax.set_xlabel("Scope size", fontsize=16)
+                ax.set_xlabel("Scope size")
                 if type_results == "comb_obj":
                     type_results = "Combined objective"
-                ax.set_ylabel(f"{type_results} score",fontsize = 16)
-                ax.tick_params(labelsize=14)
-                ax.legend(title="Columns",fontsize=14,title_fontsize=14)
+                ax.set_ylabel(f"{type_results} score")
+                ax.legend(title="Columns")
                 plt.tight_layout()
                 plt.show()
 
@@ -748,7 +765,9 @@ class Benchmark:
     def track_samples(self,filename_umap, filename_data,name_results,scope_method="product", 
                       objective_mode = {"all_obj":"max"}, objective_weights=None, 
                       bounds = {"rate":(2.349,1.035),"vendi":(6.366,1.941)},display_cut_samples=True, obj_to_display = None, 
-                      rounds_to_display = None, label_round=False,filename_figure=None,restrict_samples=None,directory='.'):
+                      dpi = 100, figsize = (10,8), size_scaling = 1,
+                      rounds_to_display = None, label_round=False, filename_figure=None,
+                      restrict_samples=None, directory='.'):
         """
         Visually tracks the evaluated and cut samples of a single benchmarking run on a provided UMAP.
         Saves the generated plot. Also provides the results for the run.
@@ -787,6 +806,15 @@ class Benchmark:
                 Default is None (take the first listed objective and its extreme values as bounds)
                 Can also provide a dict with the objective name and its extreme values (max,min).
                 E. g. : obj_to_display = {"yield":(100,0)}
+            dpi: int
+                resolution of the displayed figure
+                Default is 100 (also matplotlib default).
+            figsize: tuple of 2 int
+                figure size.
+                Default is (10,8).
+            size_scaling: float
+                Variable to scale the size of the displayed points (to account for different figsizes).
+                Default is 1.
             rounds_to_display: int or None
                 Specify how many rounds of the run you want to display (starting from the first one).
                 The metrics will also only be calculate for the these rounds.
@@ -903,31 +931,31 @@ class Benchmark:
         df_umap.sort_values("status",inplace=True,ascending=True)
 
         # Plot the results
-        plt.figure(figsize=(10,8))
+        plt.figure(figsize=figsize,dpi=dpi)
 
         if display_cut_samples:  # color by round
             colormap = self.cont_cmap
-            # Plot the non-selected points first
-            plot = sns.scatterplot(
-                data=df_umap[df_umap['round'] == 0], x="UMAP1", y="UMAP2", s=40,
-                color=self.all_colors[6], style="status", marker="o",legend=False, alpha = 0.6,
-                style_order=["suggested", "removed", "neutral"])
-
-            # Plot the cut points
-            plot = sns.scatterplot(
-                data=df_umap[df_umap["status"] == "removed"], x="UMAP1", y="UMAP2", s=50,
-                hue="round", palette=colormap, style="status", legend=False, alpha=0.7,
-                style_order=["suggested", "removed", "neutral"], zorder=2)
-
-            # Plot the selected points
-            plot = sns.scatterplot(
-                data=df_umap[df_umap["status"] == "suggested"],
-                x="UMAP1", y="UMAP2", s=100, hue="round", palette=colormap,
-                style="status", legend=False, edgecolor="k",linewidth=1,
-                style_order=["suggested", "removed", "neutral"], zorder=3)
-
             # Add a colorbar for the 'hue' (selected/ removed points)
             norm = mpl.colors.Normalize(vmin=1, vmax=len(df_data.index))  # Normalize the colorscale
+            # Plot the non-selected points first
+            df_selected =df_umap[df_umap["status"] == "suggested"]
+            df_pending = df_umap[df_umap['round'] == 0]
+            df_cut = df_umap[df_umap["status"] == "removed"]
+
+
+            plt.scatter(
+                df_pending["UMAP1"], df_pending["UMAP2"], s=40*size_scaling, linewidth=0.3,edgecolor="k",
+                color=self.all_colors[6], marker="o", alpha = 0.6, zorder=1)
+
+            # Plot the cut points
+            plt.scatter(
+                df_cut["UMAP1"], df_cut["UMAP2"], s=50*size_scaling, edgecolor="k", marker = "X",
+                c=df_cut["round"], cmap=colormap, alpha=0.7, linewidth = 0.3, zorder=2)
+
+            # Plot the selected points
+            plt.scatter(df_selected["UMAP1"],df_selected["UMAP2"],c=df_selected["round"],
+                                cmap=colormap,norm=norm,s=250*size_scaling,alpha=1,edgecolor='k',linewidth=2, zorder=3)
+
             sm = plt.cm.ScalarMappable(cmap=colormap, norm=norm)
             sm.set_array([])  # Empty array for ScalarMappable
             cbar = plt.colorbar(sm)
@@ -943,15 +971,15 @@ class Benchmark:
             vmin = obj_plot_bounds[1]
             vmax = obj_plot_bounds[0]
             norm = plt.Normalize(vmin, vmax)
-            # cmap = sns.color_palette("Doyle_cont", as_cmap=True)
             cmap = self.cont_cmap
 
             # Plot non-numeric entries ("PENDING")
-            plt.scatter(df_pending["UMAP1"], df_pending["UMAP2"], color=self.all_colors[6], s=20, alpha=0.6)
+            plt.scatter(df_pending["UMAP1"], df_pending["UMAP2"], color=self.all_colors[6], s=40*size_scaling, 
+                        alpha=0.6, linewidth=0.3, edgecolor="k")
 
             # Plot numeric entries
             scatter_numeric = plt.scatter(df_selected["UMAP1"],df_selected["UMAP2"],c=df_selected[obj_plot_name],
-                                          cmap=cmap,norm=norm,s=100,alpha=1,edgecolor='k',linewidth=1)
+                                          cmap=cmap,norm=norm,s=250*size_scaling,alpha=1,edgecolor='k',linewidth=2)
 
             # Add colorbar
             cbar = plt.colorbar(scatter_numeric)
@@ -1309,7 +1337,8 @@ class Benchmark:
 
     @staticmethod
     def get_metric_overview(bounds, budget, name_results, type_results, scope_method = "product", 
-                            objective_mode = {"all_obj":"max"}, objective_weights = None, directory = "."):
+                            objective_mode = {"all_obj":"max"}, objective_weights = None, directory = ".",
+                            specified_batch_size = None):
         """
         Helper function to calculate a metric overview for the functions progress_plot() and heatmap_plot().
         See these functions for an overview of the function parameters.
@@ -1324,6 +1353,8 @@ class Benchmark:
         4   score       score
 
         The indices are the scope sizes and 
+
+        # NOTE: finish doc string
         """
 
         # get all the raw files and sort them by hyperparameter combination
@@ -1382,15 +1413,18 @@ class Benchmark:
                         dict_raw_data[obj] = df_raw[f"obj_values {objectives}"].apply(lambda x: np.mean(x[i])).to_list()
                     else:  # structure: [<values obj1>]
                         dict_raw_data[obj] = df_raw[f"obj_values {objectives}"].apply(lambda x: np.mean(x)).to_list()
-                    # figure out the batch sizes
-                    batch = combi.split("_")[0][1:]
-                    if batch.isdigit():  # case using a fixed batch size
-                        batch = int(batch)
-                        batch_sizes = [int(batch)]*len(dict_raw_data[obj])
-                        difference = budget - sum(batch_sizes)
-                        batch_sizes[-1] += difference  # reduce the last batch if it was smaller due to budget constraints
-                    else:  # case using different batch sizes in each round
-                        batch_sizes = [int(el) for el in batch.split("-")]  # list with the batch sizes for each round
+                    # figure out the batch sizes if not specified
+                    if specified_batch_size is None:
+                        batch = combi.split("_")[0][1:]
+                        if batch.isdigit():  # case using a fixed batch size
+                            batch = int(batch)
+                            batch_sizes = [int(batch)]*len(dict_raw_data[obj])
+                            difference = budget - sum(batch_sizes)
+                            batch_sizes[-1] += difference  # reduce the last batch if it was smaller due to budget constraints
+                        else:  # case using different batch sizes in each round
+                            batch_sizes = [int(el) for el in batch.split("-")]  # list with the batch sizes for each round
+                    else:
+                        batch_sizes = [specified_batch_size] * len(dict_raw_data[obj])
                     # the obj data is the average value obtained in each round, 
                     # but we need the culmulative results until this round
                     total_obj = [i*j for i,j in zip(batch_sizes,dict_raw_data[obj])]  # batch size * average obj for each round
