@@ -765,7 +765,7 @@ class Benchmark:
     def track_samples(self,filename_umap, filename_data,name_results,scope_method="product", 
                       objective_mode = {"all_obj":"max"}, objective_weights=None, 
                       bounds = {"rate":(2.349,1.035),"vendi":(6.366,1.941)},display_cut_samples=True, obj_to_display = None, 
-                      dpi = 100, figsize = (10,8), size_scaling = 1,
+                      dpi = 100, figsize = (10,8), size_scaling = 1, filename_labelled=None,
                       rounds_to_display = None, label_round=False, filename_figure=None,
                       restrict_samples=None, directory='.'):
         """
@@ -815,6 +815,10 @@ class Benchmark:
             size_scaling: float
                 Variable to scale the size of the displayed points (to account for different figsizes).
                 Default is 1.
+            filename_labelled: str or None
+                name of the csv file containing the labelled data for the entire searchspace
+                If specified (default is None) and display_cut_samples is False, the pending/cut samples will be
+                colored by their theoretical performance.
             rounds_to_display: int or None
                 Specify how many rounds of the run you want to display (starting from the first one).
                 The metrics will also only be calculate for the these rounds.
@@ -911,7 +915,6 @@ class Benchmark:
             obj_plot = dict_obj_values[obj_plot_name]
             obj_plot_bounds = obj_to_display[obj_plot_name]
 
-        df_umap[obj_plot_name] = "PENDING"
         df_umap.index = df_umap.index.astype(str)
         # Assign the samples to the df_umap dataframe.
         for round in list(df_data.index):            
@@ -944,17 +947,19 @@ class Benchmark:
 
 
             plt.scatter(
-                df_pending["UMAP1"], df_pending["UMAP2"], s=40*size_scaling, linewidth=0.3,edgecolor="k",
+                df_pending["UMAP1"], df_pending["UMAP2"], s=40*size_scaling, 
+                linewidth=0.3*size_scaling,edgecolor="k",
                 color=self.all_colors[6], marker="o", alpha = 0.6, zorder=1)
 
             # Plot the cut points
             plt.scatter(
-                df_cut["UMAP1"], df_cut["UMAP2"], s=50*size_scaling, edgecolor="k", marker = "X",
-                c=df_cut["round"], cmap=colormap, alpha=0.7, linewidth = 0.3, zorder=2)
+                df_cut["UMAP1"], df_cut["UMAP2"], s=100*size_scaling, edgecolor="k", marker = "X",
+                c=df_cut["round"], cmap=colormap, alpha=0.7, linewidth = 0.3*size_scaling, zorder=2)
 
             # Plot the selected points
             plt.scatter(df_selected["UMAP1"],df_selected["UMAP2"],c=df_selected["round"],
-                                cmap=colormap,norm=norm,s=250*size_scaling,alpha=1,edgecolor='k',linewidth=2, zorder=3)
+                                cmap=colormap,norm=norm,s=250*size_scaling,alpha=1,edgecolor='k',
+                                linewidth=2*size_scaling, zorder=3)
 
             sm = plt.cm.ScalarMappable(cmap=colormap, norm=norm)
             sm.set_array([])  # Empty array for ScalarMappable
@@ -963,9 +968,9 @@ class Benchmark:
 
         else:  # color by obj values
             # Separate selected and non-selected points
-            df_selected = df_umap[pd.to_numeric(df_umap[obj_plot_name], errors='coerce').notna()].copy()
-            df_selected[obj_plot_name] = df_selected[obj_plot_name].astype(float)
-            df_pending = df_umap[pd.to_numeric(df_umap[obj_plot_name], errors='coerce').isna()]
+            df_umap[obj_plot_name] = df_umap[obj_plot_name].astype(float)
+            df_selected =df_umap.loc[df_umap["status"] == "suggested"]
+            df_pending =df_umap.loc[df_umap["status"] != "suggested"].copy()
 
             # Define colormap and normalization
             vmin = obj_plot_bounds[1]
@@ -973,17 +978,26 @@ class Benchmark:
             norm = plt.Normalize(vmin, vmax)
             cmap = self.cont_cmap
 
-            # Plot non-numeric entries ("PENDING")
-            plt.scatter(df_pending["UMAP1"], df_pending["UMAP2"], color=self.all_colors[6], s=40*size_scaling, 
-                        alpha=0.6, linewidth=0.3, edgecolor="k")
+            # # Plot non-selected samples
+            if filename_labelled is None:
+                # grey points if no labels are provided
+                plt.scatter(df_pending["UMAP1"], df_pending["UMAP2"], color=self.all_colors[6], s=40*size_scaling, 
+                            alpha=0.6, linewidth=0.3*size_scaling, edgecolor="k")
+            else:
+                # color by their theoretical performance
+                df_labelled = pd.read_csv(filename_labelled, index_col = 0, header = 0)
+                for idx in df_pending.index:
+                    df_pending.loc[idx,obj_plot_name] = df_labelled.loc[idx,obj_plot_name]
+                plt.scatter(df_pending["UMAP1"], df_pending["UMAP2"], cmap=cmap,norm=norm,c=df_pending[obj_plot_name], s=40*size_scaling, 
+                        alpha=0.6, linewidth=0.3*size_scaling, edgecolor="k")
 
             # Plot numeric entries
             scatter_numeric = plt.scatter(df_selected["UMAP1"],df_selected["UMAP2"],c=df_selected[obj_plot_name],
-                                          cmap=cmap,norm=norm,s=250*size_scaling,alpha=1,edgecolor='k',linewidth=2)
+                                          cmap=cmap,norm=norm,s=250*size_scaling,alpha=1,edgecolor='k',linewidth=2*size_scaling)
 
             # Add colorbar
             cbar = plt.colorbar(scatter_numeric)
-            cbar.set_label(f"Average {obj_plot_name}")
+            cbar.set_label(f"{obj_plot_name.capitalize()}")
 
         if label_round:  # label the round of selection if requested
             texts = []
