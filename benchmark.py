@@ -767,7 +767,7 @@ class Benchmark:
 
 
     def track_samples(self,filename_umap, filename_data,name_results,scope_method="product", 
-                      objective_mode = {"all_obj":"max"}, objective_weights=None, obj_plot_bounds = None, cbar_scaling = None,
+                      objective_mode = {"all_obj":"max"}, objective_weights=None, obj_plot_bounds = None, cbar_scaling = None, cbar_title = None,
                       bounds = {"rate":(2.349,1.035),"vendi":(6.366,1.941)},display_cut_samples=True, obj_to_display = None, 
                       dpi = 100, figsize = (10,8), size_scaling = 1, filename_labelled=None, show_colorbar = True,
                       rounds_to_display = None, label_round=False, filename_figure=None, hide_axis = False,
@@ -801,6 +801,9 @@ class Benchmark:
                 option to provide bounds (max,min) for the color bar (default is None)
             cbar_scaling: int or None
                 option to scale the values on the colorbar (e. g. if yield scale is [0,1] instead of [0,100])
+            cbar_title: str or None
+                If None, the objective name will be displayed on the color bar.
+                If a string is provided, the color bar label will be set by the variable.
             bounds: dict
                 dictionary of bounds for the individual metrics (vendi, all objectives)
                 Default values are for the ArI dataset.
@@ -1018,10 +1021,13 @@ class Benchmark:
                 if cbar_scaling is not None:
                     tick_labels = [f"{int(t * cbar_scaling)}" for t in cbar.get_ticks()]
                     cbar.set_ticklabels(tick_labels)
-                cbar_label = obj_plot_name.capitalize()
-                if obj_plot_name.lower() == "yield":
-                    cbar_label = "Yield (%)"
-                cbar.set_label(cbar_label)
+                if cbar_title is None:
+                    cbar_label = obj_plot_name.capitalize()
+                    if obj_plot_name.lower() == "yield":
+                        cbar_label = "Yield (%)"
+                    cbar.set_label(cbar_label)
+                else:
+                    cbar.set_label(cbar_title)
 
         if label_round:  # label the round of selection if requested
             texts = []
