@@ -24,6 +24,7 @@ from .space_creator import create_reaction_space
 from .utils import EDBOStandardScaler, calculate_vendi_score, obtain_full_covar_matrix, vendi_pruning, variance_pruning, SHAP_analysis, draw_suggestions
 from .acquisition import greedy_run, explorative_run, random_run, low_variance_selection, hypervolume_improvement
 from .featurization import calculate_morfeus_descriptors
+from .visualize import UMAP_view
 
 
 tkwargs = {
@@ -41,7 +42,7 @@ class ScopeBO:
 
     @staticmethod
     def generate_features(smiles_list,
-                          filename,
+                          filename = "reactant_features.csv",
                           common_core=None,
                           chunk_size=10,
                           find_restart = True,
@@ -64,6 +65,7 @@ class ScopeBO:
                 Default is None --> will look for the largest common substructure in the molecule
             filename: str
                 path for the generated dataset
+                Default: "reactant_features.csv"
             common_core: str or None
                 SMARTS for a substructure for which atom descriptors will be extracted
                 If common_core=None (Default), the atom descriptors will be calculated for the
@@ -119,7 +121,7 @@ class ScopeBO:
     
 
     @staticmethod
-    def feature_analysis(objectives,filename,objective_mode = {"all_obj":"max"}, plot_type=["bar"],directory="."):
+    def feature_analysis(filename, objectives =None, objective_mode = {"all_obj":"max"}, plot_type=["bar"],directory="."):
         """
         Analyzes the importance of features on the surrogate model using SHAP.
         ---------------------------------------------------------------------
@@ -226,8 +228,64 @@ class ScopeBO:
         
         return df_pred
 
+    @staticmethod
+    def UMAP_view(filename,
+                obj_to_show = None,
+                obj_bounds = None,
+                objectives = None,
+                display_cut_samples = True,
+                figsize = (10,8),
+                dpi = 600,
+                show_figure = True,
+                cbar_title = None,
+                return_dfs = False,
+                directory = "."):
+        """
+        Creates a UMAP for the search space, highlighting the picked samples.
+        Optionally returns dataframes for seen, unseen neutral and unseen cut samples.
+        ----------
+        filename : str or Path
+            Path to the CSV file containing the reaction search space.
+        obj_to_show : str or None
+            Name of the objective that is visualized.
+            If None (Default), the first listed objective is used.
+        obj_bounds : tuple or list, optional
+            (max, min) values to manually set the colorbar range for `obj_to_show`.
+            If None, the min/max are taken from the observed evaluated samples.
+        objectives : list-like, optional
+            List of column names containing objective values (including "PENDING").
+            If None, they are automatically inferred from columns containing
+            "PENDING" strings.
+        display_cut_samples : bool, default=True
+            Whether cut samples (priority = -1) are shown as X markers.
+            If False, they are plotted as unseen points.
+        figsize : tuple, default=(10, 8)
+            Size of the generated UMAP figure in inches.
+        dpi : int, default=600
+            Resolution of the output figure.
+        show_figure : bool, default=True
+            Whether to display the UMAP plot.
+        cbar_title : str, optional
+            Custom title for the colorbar. If None, uses the objective name.
+        return_dfs : bool, default=False
+            If True, returns a dictionary of DataFrames for:
+                - seen     (evaluated samples)
+                - neutral  (unseen priority = 0)
+                - cut      (unseen priority = -1)
+        directory : str or Path, default="."
+            Directory containing the CSV file.
+        """
+
+        df_dict = UMAP_view(filename=filename, obj_to_show=obj_to_show, obj_bounds=obj_bounds,
+                            objectives=objectives, display_cut_samples=display_cut_samples,
+                            figsize=figsize, dpi=dpi, show_figure=show_figure, cbar_title=cbar_title,
+                            return_dfs=return_dfs, directory=directory)
+
+        if return_dfs:
+            return df_dict
+
     
-    def get_vendi_score(self, objectives, directory='.', filename='reaction_space.csv'):
+    def get_vendi_score(self, objectives = None, directory='.', filename='reaction_space.csv'):
 
         """
         Calculates the Vendi score for all samples that have been evaluated so far (= training data).
@@ -247,8 +305,14 @@ class ScopeBO:
         """
         wdir = Path(directory)
         df = pd.read_csv(wdir.joinpath(filename),index_col=0,header=0, float_precision = "round_trip")
+
+        # identify the objectives (containing PENDING entries) if none are given
+        if objectives is None:
+            objectives = df.columns[df.eq("PENDING").any()].to_list()
+
         # Sort the df by index to ensure compatibility with the covariance matrix values.
         sorted_df = df.sort_index()
+
         #get the indices of all datapoints that were evaluated so far. Samples that have not been measured will have "PENDING" as the entry in the objective column and will be ignored.
         idx_target = (sorted_df[~sorted_df.apply(lambda r: r.astype(str).str.contains('PENDING', case=False).any(), axis=1)]).index.values
         # Convert the indices to numeric indices.
@@ -320,15 +384,15 @@ class ScopeBO:
                 if len(samples) < batch:
                     additional_samples = df.sample(n=batch-len(samples), random_state=seed, replace=True)
                     additional_samples = additional_samples.reset_index(drop=True)
-                # Add the additional samples to the samples dataframe. If some of the additional_samples are already in samples, generate new ones until the batch size is reached.
+                # Add the additional samples to the samples dataframe. 
+                # If some of the additional_samples are already in samples, generate new ones until the batch size is reached.
                 extra_seed = 45
                 while len(samples) < batch:
                     samples = pd.concat([samples,additional_samples]).drop_duplicates(ignore_index=True)
                     additional_samples = df.sample(n=batch-len(samples), random_state=seed+extra_seed, replace=True)
                     extra_seed += extra_seed
                 
-        # Samples have been created, but need to be assigned a priority and 
-        # also to the dataframe.
+        # Samples have been created, but need to be assigned a priority and also to the dataframe.
 
         # Get index of the best samples according to the random sampling method.
         df_sampling = df.to_numpy()
@@ -364,12 +428,18 @@ class ScopeBO:
             ):
         
         """
-        Prepares the dataframe for the BO run and then runs it using the
-        nested function model_run (defined below this function).
-        
-        Parameters
-        NOTE: go through docstring again.
-        ----------
+        ScopeBO main function to suggest experiments based on previous experimental results.
+        Returns the updated reaction space dataframe with suggested experiments having the highest priority.
+        The input search space csv file (variable filename) is overwritten with the new priority values.
+        priority values:
+            1 : suggested samples 
+            0.9 – 0.5: alternative suggestions (only if give_alternative_suggestions = True) (higher value = higher priority)
+            0  : unseen samples (not yet suggested for experimentation)
+            -1 : cut samples (not suggested for experimentation)
+            -2 : previously evaluated samples
+        Also visualizes the suggested experiments if show_suggestions = True. 
+        This however only works if the search space indices are SMILES.
+        ------------------------------------------------------------------------
         objectives: list
             list of strings containing the name for each objective.
             Example:
@@ -379,52 +449,60 @@ class ScopeBO:
             Provide dict with value "min" in case of a minimization task (e. g. {"cost":"min"})
             Code will assume maximization for all non-listed objectives
             Default is {"all_obj":"max"} --> all objectives are maximized
-        objective_weights: list
+        objective_weights: list or None
             list of float weights for the scalarization of the objectives 
             only relevant for multi-objective greedy runs, not other acquisition functions
-            NOTE: add the final name of the function
             Default: None (objectives will be averaged)
         directory: string
             name of the directory to save the results of the optimization.
-            Default is the current directory
+            Default is the current directory (".")
         filename: string
-            Name of the file to save a *csv* with the priority list. 
-            If *get_predictions=True* EDBO+ will automatically save a second 
-            file including the predictions (*pred_filename.csv*).
-            Default name is 'reaction.csv'.
-        columns_features: list
-            List containing the names of the columns to be included in the regression model. By default set to
-            'all', which means the algorithm will automatically select all the columns that are not in
-            the *objectives* list.
-        batch: int or None
+            Name of the search space file containing the possible scope selections and prior results.
+            Default name is 'reaction_space.csv'.
+        batch: int
             Number of experiments that you want to run in parallel. 
-            Default is None (will use the value from optimization based on the number of samples).
+            Default is 3 (optimized settings).
         init_sampling_method: string:
             Method for selecting the first samples in the scope (in absence)  Choices are:
-            - 'random' : Random seed (as implemented in Pandas).
+            - 'random' : Random initiation (default).
             - 'lhs' : LatinHypercube sampling.
-            - 'cvtsampling' : CVT sampling (default option) 
+            - 'cvt' : CVT sampling (default option) 
         seed: int
-            Seed for the random initialization. Default = 42
-        Vendi_pruning_fraction: float or None
-            Pruning factor for the Vendi score evaluation.
-            Default is None (will use the value from optimization based on the number of samples).
+            Seed for reproducibility. Default = 42
+        Vendi_pruning_fraction: int
+            Pruning percentage for removal of similar samples from the search space.
+            Default is 13 (optimized settings).
         pruning_metric: str
-            Metric used for the pruning.
+            Mode used for the pruning.
             Options:
-                "vendi_batch": pruning by vendi scores before every round of experiments.
-                "vendi_sample": pruning by vendi score before every sample (default).
+                "vendi_batch": pruning by vendi scores before every round of experiments (default - optimized settings).
+                "vendi_sample": pruning by vendi score before every sample.
                 "variance": pruning by surrogate model variance (implemented only for benchmarking purposes).
         acquisition_function_mode: str
             Choose the acqusition function.
             Options:
-                "balanced" (Default): exploration-exploitation trade-off via ExpectedImprovement (1 objective) or NoisyExpectedHypervolumeImprovement (multi-objective)
+                "balanced" (Default): exploration-exploitation trade-off via ExpectedImprovement (1 objective) 
+                                                                          or NoisyExpectedHypervolumeImprovement (multi-objective)
                 "greedy": pure exploitative selection
                 "explorative": pure explorative selection
                 "random": random selection
         give_alternative_suggestions: Boolean
-            Option to get alternative suggestions.
+            Option to get 5 alternative suggestions. This can be use if the preferred suggestion is not feasible experimentally.
             Default is True.
+        show_suggestions: Boolean
+            Option to draw the suggested experiments after the run. Only works if the search space indices (compound identifiers) are SMILES.
+            Default is True.
+        sample_threshold: float, tuple, or None
+            Numeric threshold for a minimum pairwise Vendi score between two samples in a batch.
+            If a tuple is provided, the first value is the Vendi score threshold 
+            and the second value is minimum number of prior samples needed for the pruning to be applied.
+            Default is None (no thresholding).
+            This option was explored during development, but not used in the final version of ScopeBO and only implemented for legacy reasons.
+        enforce_dissimilarity: Boolean
+            If True, removes all samples from the search space in each batch that have a pairwise 
+            Vendi score below 1.06 to any of the previously selected samples.
+            Default is False.
+            This option was explored during development, but not used in the final version of ScopeBO and only implemented for legacy reasons.
         """
         
         # Set filenames, random seeds.
@@ -605,14 +683,13 @@ class ScopeBO:
         """
         Runs the BO process using a Gaussian Process surrogate model and expected improvement-type
         acquisition functions:
-            LogNoisyExpectedImprovement for single objective models
-            LogNoisyExpectedHypervolumeImprovement for multi objective models
+            qExpectedImprovement for single objective models
+            qNoisyExpectedHypervolumeImprovement for multi objective models
+        (These are the default acquisition functions, but also others can be requested via the acquisition_function_mode parameter).
 
         Returns a priority list for a given reaction space (top priority to low priority).
         
-        -------------------------------------------------------
-        self: instance of class
-        
+        -------------------------------------------------------        
         df:   Dataframe containing the prepared features for the BO run
                 (both test+train, see run function)
         
@@ -621,8 +698,7 @@ class ScopeBO:
         full_covariance_matrix: DataFrame
             covariance matrix of the full dataset
         
-        objective_mode, seed, Vendi_pruning_fraction,
-        pruning_metric, give_alternative_suggestions:
+        Other variables:
             see doc string for run function above.
         """
 
@@ -954,7 +1030,7 @@ class ScopeBO:
                 Vendi_cutoff = sample_threshold[0]
                 sample_cutoff = sample_threshold[1]
             else:
-                print("The input variable must either be numeric or a tuple. Please check your input!")
+                print("The input variable sample_threshold must either be numeric or a tuple. Please check your input!")
             
             if (sample_cutoff is None) or (sample_cutoff >= (len(idx_train))-3):  # minus 3 because the three samples from this run have already been added to idx_train
 

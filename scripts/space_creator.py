@@ -35,9 +35,6 @@ def create_reaction_space(reactants, feature_processing=True, directory='./', fi
 
     filename: string
         Filename of the output csv file. Default is reaction_space.csv
-
-    check_overwrite: Boolean
-        Ask if overwritting file is ok. Default is True.
     """
     
     # Set working directory.
@@ -108,6 +105,7 @@ def create_reaction_space(reactants, feature_processing=True, directory='./', fi
     df_space.to_csv(csv_filename, index=True, mode = 'w', header=True)
 
     print("Generation of reaction space completed!")
+    print(f"The search space has been saved in the file '{filename}.'")
 
     return df_space
 
@@ -134,5 +132,6 @@ def feature_preprocessing(df):
         removed_columns.append(column)
 
     print(f"The following features were removed: {removed_columns}")
+    print(f"The final search space has {len(df.columns)} features.")
     
     return df

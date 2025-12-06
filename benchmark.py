@@ -1108,7 +1108,7 @@ class Benchmark:
             values = row[f"obj_values {objectives}"]
             sample_dict.update(dict(zip(labels, values)))
         
-        def generate_representation(smiles_list):
+        def _generate_representation(smiles_list):
             # Convert to molecules
             mol_list = [Chem.MolFromSmiles(smiles) for smiles in smiles_list]
 
@@ -1132,7 +1132,7 @@ class Benchmark:
             if by_round:
                 for scope_round in df_data.index:
                     smiles_list = df_data.loc[scope_round,"eval_samples"]
-                    mol_list = generate_representation(smiles_list)
+                    mol_list = _generate_representation(smiles_list)
                     # Draw the aligned molecules
                     print(f"Molecules selected in round {scope_round+1}:")
                     if round_values is None:
@@ -1149,7 +1149,7 @@ class Benchmark:
 
             else:
                 smiles_list = [smiles for round_list in [df_data.loc[round,"eval_samples"] for round in df_data.index] for smiles in round_list]
-                mol_list = generate_representation(smiles_list)
+                mol_list = _generate_representation(smiles_list)
                 if round_values is None:
                     legends = [f"{sample_dict[smiles]*scale_values}"+label_suffix for smiles in smiles_list]
                 else:

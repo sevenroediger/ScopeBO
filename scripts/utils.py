@@ -293,8 +293,8 @@ def variance_pruning(idx_test,n_objectives,Vendi_pruning_fraction,cumulative_tes
     return cumulative_test_x, cut_by_vendi, idx_test
 
 
-def SHAP_analysis(objectives,
-                  filename,
+def SHAP_analysis(filename,
+                  objectives = None,
                   objective_mode = {"all_obj":"max"},  
                   plot_type = ["bar"],
                   directory = "."):
@@ -306,6 +306,7 @@ def SHAP_analysis(objectives,
             filename of the reaction space csv file including experimental outcomes
         objectives: list
             list of the objectives. E. g.: [yield,ee]
+            if None: will try to infer the objectives by looking for columns with the value "PENDING"
         objective_mode: dict
             Dictionary of objective modes for objectives
             Provide dict with value "min" in case of a minimization task (e. g. {"cost":"min"})
@@ -330,6 +331,10 @@ def SHAP_analysis(objectives,
 
     wdir = Path(directory)
     df = pd.read_csv(wdir.joinpath(filename),index_col=0,header=0, float_precision = "round_trip")
+
+    # identify the objectives (containing PENDING entries) if none are given
+    if objectives is None:
+        objectives = df.columns[df.eq("PENDING").any()].to_list()
 
     # get the data with labels and convert it to the require datatype.
     idx_train = (df[~df.apply(lambda r: r.astype(str).str.contains('PENDING', case=False).any(), axis=1)]).index.values
@@ -399,7 +404,6 @@ def SHAP_analysis(objectives,
         with torch.no_grad():
             # Get the mean prediction from the model's posterior distribution
             return surrogate_model.posterior(X_tensor).mean.detach().numpy()
-
 
     explainer = shap.Explainer(predict_fn,df_train_x_scaled)
     max_evals = 500
