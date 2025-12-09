@@ -460,7 +460,7 @@ def draw_suggestions(df):
     alternative_suggestions = df[(df["priority"] > 0) & (df["priority"] < 1)].index.to_list()
 
     # Check if this is a multi-component reaction (substrates separated by ".").
-    if "__" in suggestions[0]:  # multi-component reaction
+    if "." in suggestions[0]:  # multi-component reaction
         print("These are the suggested substrate combinations:")
         for suggestion in suggestions:
             drawing_function(smiles_list=suggestion.split("."))

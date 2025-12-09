@@ -64,9 +64,9 @@ def calculate_morfeus_descriptors (smiles_list,
     print("This might take several minutes or even hours. Please stand by.")
     # Find common substructure and align the template
     # Create a folder to save the separate chunks of calculation results
-    if not os.path.exists("./morfeus_chunks"):
+    if not os.path.exists("./featurization_temp"):
         # Create the folder
-        os.makedirs("./morfeus_chunks")
+        os.makedirs("./featurization_temp")
     template = None
     if common_core is None:
         template = _get_mcs_template_with_consistent_atom_order(smiles_list)
@@ -84,14 +84,14 @@ def calculate_morfeus_descriptors (smiles_list,
     # check if some chunks have already been calculated and automatically restart
     if find_restart:
 
-        # check if ./morfeus_chunks (results folder) is empty
+        # check if ./featurization_temp (temporary results folder) is empty
         last_chunk = None
-        chunk_folder = "./morfeus_chunks"
+        chunk_folder = "./featurization_temp"
         if not os.listdir(chunk_folder):
             last_chunk = 0  # no chunks run yet
         else:
             # check which chunk was run last
-            pattern = re.compile(r"morfeus_chunk_(\d+)\.csv$")
+            pattern = re.compile(r"feat_chunk_(\d+)\.csv$")
             for fname in os.listdir(chunk_folder):
                 match = pattern.match(fname)
                 if match:
@@ -164,7 +164,7 @@ def calculate_morfeus_descriptors (smiles_list,
         smiles_list_chunk.append(smiles)  # add the smiles to the list of smiles in this chunk
 
         if (smiles_index + 1) % chunk_size == 0:  # check if the chunk is full; +1 due to zero-indexing
-            pd.DataFrame(results,index=smiles_list_chunk,columns=properties).to_csv(f"./morfeus_chunks/morfeus_chunk_{chunk_label}.csv",index=True,header=True)
+            pd.DataFrame(results,index=smiles_list_chunk,columns=properties).to_csv(f"./featurization_temp/feat_chunk_{chunk_label}.csv",index=True,header=True)
             # clean out the collection variables for the next chunk
             results = []
             smiles_list_chunk = []
@@ -172,15 +172,15 @@ def calculate_morfeus_descriptors (smiles_list,
     
     # once all smiles have been calculated, save the last samples in a final chunk
     if smiles_list_chunk:
-        pd.DataFrame(results,index=smiles_list_chunk,columns=properties).to_csv(f"./morfeus_chunks/morfeus_chunk_{chunk_label}.csv",index=True,header=True)
+        pd.DataFrame(results,index=smiles_list_chunk,columns=properties).to_csv(f"./featurization_temp/feat_chunk_{chunk_label}.csv",index=True,header=True)
 
     # combine the chunks and clean up
     dfs = []
-    for chunk_file in os.listdir("./morfeus_chunks"):
-        dfs.append(pd.read_csv(f"./morfeus_chunks/{chunk_file}",index_col=0,header=0))
+    for chunk_file in os.listdir("./featurization_temp"):
+        dfs.append(pd.read_csv(f"./featurization_temp/{chunk_file}",index_col=0,header=0))
     df_combined = pd.concat(dfs,axis=0)
     df_combined.to_csv(filename,index=True,header=True)
-    shutil.rmtree("./morfeus_chunks")
+    shutil.rmtree("./featurization_temp")
     os.remove("qce_optim.xyz")
 
     print("Finished descriptor calculation.")
