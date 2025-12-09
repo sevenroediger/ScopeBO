@@ -436,6 +436,8 @@ def draw_suggestions(df):
         """
         Draws the molecules provided in a list of smiles string.
         """
+        smiles_list = [str(entry.encode().decode('unicode_escape')) for entry in smiles_list]
+
         try:
             mol_list = [Chem.MolFromSmiles(smiles) for smiles in smiles_list]
             # Generate 2D coordinates for all mols
