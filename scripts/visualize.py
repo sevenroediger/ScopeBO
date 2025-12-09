@@ -152,7 +152,7 @@ def UMAP_view(filename,
             # Draw the aligned molecules
             depiction = Draw.MolsToGridImage(
                 mol_list,
-                molsPerRow=len(mol_list),
+                molsPerRow=6,
                 subImgSize=(200, 200),
                 legends=[str(result_val) for result_val in scope_labels]
                 )
