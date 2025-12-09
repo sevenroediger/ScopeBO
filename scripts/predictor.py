@@ -299,7 +299,7 @@ class ScopeBO:
         return df_pred
 
     @staticmethod
-    def UMAP_view(filename,
+    def visualize(filename,
                 obj_to_show = None,
                 obj_bounds = None,
                 objectives = None,
@@ -798,6 +798,7 @@ class ScopeBO:
         cut_by_vendi = []  # list to hold the experiments cut by the Vendi diversity pruning
         
         # explicitly enforce that the selected points are sufficiently dissimilar from all previously selected points
+        # if requested (default is False)
         if enforce_dissimilarity:
             sorted_df = df.sort_index()
             idx_train_num = [sorted_df.index.get_loc(idx) for idx in idx_train]
@@ -861,7 +862,7 @@ class ScopeBO:
             sobol_num_samples = 512
         sampler = SobolQMCNormalSampler(num_samples=sobol_num_samples, collapse_batch_dims=True, seed=seed)
 
-        # Prune the search space via Vendi scoring if requested.
+        # Prune the search space via Vendi scoring if requested (this pruning mode is the default)
         if Vendi_pruning_fraction != 0:
             if pruning_metric.lower() == "vendi_batch":
                 cumulative_test_x, cut_by_vendi, idx_test = vendi_pruning(
@@ -892,7 +893,9 @@ class ScopeBO:
             for batch_exp in range(batch):
                 print(f"Selecting sample {batch_exp+1} of {batch}...")
 
-                # Prune the search space via Vendi scoring if requested (this time for each sample (after the fantasies) not each batch).
+                # Prune the search space via Vendi scoring if requested 
+                # (this time for each sample (after the fantasies) not each batch).
+                # Default is pruning before each batch (see above), not before each sample (here)
                 if ((pruning_metric.lower()  == 'vendi_sample') and (Vendi_pruning_fraction != 0)):
                     cumulative_test_x, cut_by_vendi, idx_test = vendi_pruning(
                         idx_test = idx_test,
@@ -1094,7 +1097,7 @@ class ScopeBO:
         else:
             return print("Acquisition function not found - no samples selected. Please check your input!")
 
-        # remove samples that are too similar to each other in the suggestions if requested
+        # remove samples that are too similar to each other in the suggestions if requested (default is to not do this)
         if (sample_threshold is not None) and (len(best_samples) > 1):
 
             # Set up variables
