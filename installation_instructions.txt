@@ -1,0 +1,11 @@
+1. Install anaconda (preferably via miniconda3) if you do not have it.
+
+2. Open a terminal window.
+
+3. Navigate to the folder containing this file.
+
+4. Install the environment by running: conda env create -f environment.yml
+
+5. Activate the environment using: conda activate scope_bo
+
+6. Done!
