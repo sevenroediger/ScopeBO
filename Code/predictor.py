@@ -1,11 +1,7 @@
 import os
+import random
 import sys
 import warnings
-import random
-
-import torch
-import numpy as np
-import pandas as pd
 
 from botorch.acquisition.multi_objective.monte_carlo import qNoisyExpectedHypervolumeImprovement
 from botorch.acquisition.monte_carlo import qExpectedImprovement
@@ -14,9 +10,12 @@ from botorch.optim import optimize_acqf_discrete
 from botorch.sampling.samplers import SobolQMCNormalSampler
 from idaes.surrogate.pysmo.sampling import LatinHypercubeSampling, CVTSampling
 import itertools
+import numpy as np
+import pandas as pd
 from pathlib import Path
 from scipy.spatial.distance import cdist
 from sklearn.preprocessing import MinMaxScaler
+import torch
 
 from .mlr_modeling import regression_modeling
 from .model import build_and_optimize_model
@@ -26,17 +25,26 @@ from .acquisition import greedy_run, explorative_run, random_run, low_variance_s
 from .featurization import calculate_morfeus_descriptors
 from .visualize import UMAP_view
 
-
+# torch settings
 tkwargs = {
     "dtype": torch.double,
-    "device": torch.device("cpu"),
-}
+    "device": torch.device("cpu")}
 
 
 class ScopeBO:
+    """
+    Main class for the ScopeBO package.
+    Contains functions for: 
+        - Generating features from SMILES strings (generate_features function)
+        - Creating the reaction space from reactant feature files (create_reaction_space function)
+        - Analyzing feature importance using SHAP
+        - Predicting reaction performance using multivariable linear regression (predict_performance function)
+        - Visualizing the reaction space using UMAP (visualize function)
+        - Calculating the Vendi score for evaluated samples (get_vendi_score function)
+        - Running the ScopeBO optimization loop to suggest experiments (run function)
+    """
 
     def __init__(self):
-
         self.full_covariance_matrix = None
 
 
@@ -491,8 +499,11 @@ class ScopeBO:
             objectives, 
             objective_mode = {"all_obj":"max"}, 
             objective_weights=None,
-            directory='.', filename='reaction_space.csv',
-            batch=3, init_sampling_method='random', seed=42,
+            directory='.', 
+            filename='reaction_space.csv',
+            batch=3, 
+            init_sampling_method='random', 
+            seed=42,
             Vendi_pruning_fraction=13,
             pruning_metric = "vendi_batch",
             acquisition_function_mode='balanced',
@@ -508,17 +519,17 @@ class ScopeBO:
         The input search space csv file (variable filename) is overwritten with the new priority values.
         priority values:
             1 : suggested samples 
-            0.9 – 0.5: alternative suggestions (only if give_alternative_suggestions = True) (higher value = higher priority)
+            0.9–0.5: alternative suggestions (only if give_alternative_suggestions = True) (higher value = higher priority)
             0  : unseen samples (not yet suggested for experimentation)
             -1 : cut samples (not suggested for experimentation)
             -2 : previously evaluated samples
         Also visualizes the suggested experiments if show_suggestions = True. 
-        This however only works if the search space indices are SMILES.
+        The visualization however only works if the search space indices are SMILES. Use show_suggestions = False otherwise.
         ------------------------------------------------------------------------
         objectives: list
             list of strings containing the name for each objective.
             Example:
-                objectives = ['yield', 'cost', 'impurity']
+                objectives = ['yield', 'selectivity', 'purity']
         objective_mode: dict
             Dictionary of objective modes for objectives
             Provide dict with value "min" in case of a minimization task (e. g. {"cost":"min"})
@@ -538,8 +549,8 @@ class ScopeBO:
             Number of experiments that you want to run in parallel. 
             Default is 3 (optimized settings).
         init_sampling_method: string:
-            Method for selecting the first samples in the scope (in absence)  Choices are:
-            - 'random' : Random initiation (default).
+            Sampling method for selecting the first samples in the scope. Choices are:
+            - 'random' : Random sampling (default).
             - 'lhs' : LatinHypercube sampling.
             - 'cvt' : CVT sampling (default option) 
         seed: int
@@ -556,13 +567,13 @@ class ScopeBO:
         acquisition_function_mode: str
             Choose the acqusition function.
             Options:
-                "balanced" (Default): exploration-exploitation trade-off via ExpectedImprovement (1 objective) 
-                                                                          or NoisyExpectedHypervolumeImprovement (multi-objective)
+                "balanced" (Default): exploration-exploitation trade-off via qExpectedImprovement (1 objective) 
+                                                                          or qNoisyExpectedHypervolumeImprovement (multi-objective)
                 "greedy": pure exploitative selection
                 "explorative": pure explorative selection
                 "random": random selection
         give_alternative_suggestions: Boolean
-            Option to get 5 alternative suggestions. This can be use if the preferred suggestion is not feasible experimentally.
+            Option to get 5 alternative suggestions. These can be used if the preferred suggestion is not feasible experimentally.
             Default is True.
         show_suggestions: Boolean
             Option to draw the suggested experiments after the run. Only works if the search space indices (compound identifiers) are SMILES.
@@ -570,14 +581,16 @@ class ScopeBO:
         sample_threshold: float, tuple, or None
             Numeric threshold for a minimum pairwise Vendi score between two samples in a batch.
             If a tuple is provided, the first value is the Vendi score threshold 
-            and the second value is minimum number of prior samples needed for the pruning to be applied.
+            and the second value is the minimum number of prior samples needed for the pruning to be applied.
             Default is None (no thresholding).
-            This option was explored during development, but not used in the final version of ScopeBO and only implemented for legacy reasons.
+            This option was explored during development, but not used in the final version of ScopeBO 
+            and is only implemented for legacy reasons.
         enforce_dissimilarity: Boolean
             If True, removes all samples from the search space in each batch that have a pairwise 
             Vendi score below 1.06 to any of the previously selected samples.
             Default is False.
-            This option was explored during development, but not used in the final version of ScopeBO and only implemented for legacy reasons.
+            This option was explored during development, but not used in the final version of ScopeBO 
+            and is only implemented for legacy reasons.
         """
         
         # Set filenames, random seeds.
@@ -587,7 +600,7 @@ class ScopeBO:
         np.random.seed(seed)
   
 
-        # 1. Safe checks.
+        # Check for correct input.
 
         # Check for correct Vendi_pruning_fraction input.
         if Vendi_pruning_fraction is not None:
@@ -606,17 +619,16 @@ class ScopeBO:
             objective_weights = [float(weight) for weight in objective_weights]
 
         # Check that the reaction space table exists.
-        msg = "Reaction space was not found. Please create one and provide it as input (csv file)."
+        msg = "The reaction space file was not found. Please create one and provide it as input (csv file)."
         assert os.path.exists(csv_filename), msg
 
-        # 2. Load reaction space from scope csv file and remove columns without any values.
+        # Load reaction space from scope csv file and remove columns without any values.
         df = pd.read_csv(f"{csv_filename}",index_col=0,header=0, float_precision = "round_trip")
         df = df.dropna(axis='columns', how='all')
         original_df = df.copy(deep=True)  # Make a copy of the original data.
 
-        # 2.1. Initialize sampling (only in the first iteration).
+        # get the objectives that are actually in the scope DataFrame.
         obj_in_df = list(filter(lambda x: x in df.columns.values, objectives))
-        # filter out the objectives that are actually in the scope DataFrame.
 
         # Check whether new objective has been added
         # if there are, add them to the DataFrame and use PENDING as a dummy value.
@@ -624,7 +636,7 @@ class ScopeBO:
             if obj_i not in original_df.columns.values:
                 original_df[obj_i] = 'PENDING'
 
-        # check if there are DataFrame entries with experimental results
+        # check if there are DataFrame entries with experimental results (no PENDING values in any objective column)
         idx_experimental_results = original_df[~original_df.isin(['PENDING']).any(axis=1)].index
 
         # If there was not an objective column in the data frame prior to
@@ -653,6 +665,7 @@ class ScopeBO:
         
             return original_df
 
+        # If there are no experimental results, use initialization sampling.
         if not idx_experimental_results.tolist():
             
             # If there is a priority list but no results, the user should fill in data.
@@ -687,9 +700,13 @@ class ScopeBO:
                     draw_suggestions(df=original_df)
                 
                 return original_df
+            
+        # There are experimental results that can be used to train the model.
+        print(f"Found {len(idx_experimental_results)} existing scope entries.")
         
         # Check that the search space still contains enough samples. Also reset priority of suggested samples that were not measured.
         if "priority" in df.columns.values:
+            # test samples are samples without experimental results (= rows containing "PENDING") and which were not pruned (priority != -1)
             df_noexperiments = df[df.apply(lambda r: r.astype(str).str.contains('PENDING', case=False).any(), axis=1)]
             idx_test = df_noexperiments[df_noexperiments['priority'] != -1].index
             
@@ -756,16 +773,15 @@ class ScopeBO:
                    seed, Vendi_pruning_fraction, pruning_metric, acquisition_function_mode,
                    full_covariance_matrix,give_alternative_suggestions,sample_threshold,enforce_dissimilarity):
         """
-        Runs the BO process using a Gaussian Process surrogate model and expected improvement-type
-        acquisition functions:
+        Runs the BO process using Vendi pruning, a Gaussian Process surrogate model 
+        and expected improvement-type acquisition functions:
             qExpectedImprovement for single objective models
             qNoisyExpectedHypervolumeImprovement for multi objective models
         (These are the default acquisition functions, but also others can be requested via the acquisition_function_mode parameter).
 
         Returns a priority list for a given reaction space (top priority to low priority).
-        
         -------------------------------------------------------        
-        df:   Dataframe containing the prepared features for the BO run
+        df:   Dataframe for the BO run
                 (both test+train, see run function)
         
         batch: int (number of experiments to run in this batch of experiments)
@@ -778,6 +794,7 @@ class ScopeBO:
         """
 
         class HiddenPrints:
+            """Class to hide print statements from functions called within the function."""
             def __enter__(self):
                 self._original_stdout = sys.stdout
                 sys.stdout = open(os.devnull, 'w')
@@ -813,8 +830,7 @@ class ScopeBO:
                     idx_test = idx_test.drop(idx1)
                     cut_by_vendi.append(idx1)
 
-
-        # prepare x and y data for BO model by removing objectives and priority columns for the BO model inputs
+        # prepare X and y data for BO model by removing objectives and priority columns for the BO model inputs
         df_train_y = df.loc[idx_train][objectives]
         if 'priority' in df.columns.tolist():
             priority_list = list(df["priority"])
@@ -824,16 +840,16 @@ class ScopeBO:
         df_train_x = df.loc[idx_train]
         df_test_x = df.loc[idx_test]
         
-        # Check number of objectives.
+        # Check the number of objectives.
         n_objectives = len(df_train_y.columns.values)
 
-        # Scaling of input data.
+        # Scaling of input data (normalization).
         scaler_x = MinMaxScaler()
-        scaler_x.fit(df_train_x.to_numpy())
-        train_x_np = scaler_x.transform(df_train_x.to_numpy())
-        test_x_np = scaler_x.transform(df_test_x.to_numpy())
+        scaler_x.fit(df_train_x.to_numpy())  # fit on training features
+        train_x_np = scaler_x.transform(df_train_x.to_numpy())  # transform training features
+        test_x_np = scaler_x.transform(df_test_x.to_numpy())  # transform test features with the same scaler
         
-        # Scaling of training outputs. 
+        # Scaling of training outputs (standardization). 
         # Also convert minimization problems to pseudo-maximization problem by negating the output values.
         train_y_np = df_train_y.astype(float).to_numpy()
         min_obj = [obj for obj, value in objective_mode.items() if value == "min"]
@@ -872,8 +888,9 @@ class ScopeBO:
                     cumulative_test_x = cumulative_test_x, 
                     cut_by_vendi = cut_by_vendi,
                     full_covariance_matrix=full_covariance_matrix,
-                    df=df, seed = seed)
-                print(f"Cut {len(cut_by_vendi)} samples from the search space via Vendi pruning.")
+                    df=df,
+                    seed = seed)
+                print(f"Cut {len(cut_by_vendi)} samples from the search space via Vendi pruning. {len(idx_test)} samples remain.")
                 
             elif pruning_metric.lower() == "variance":  # instead prune by variance (implemented for benchmarking purposes)
                 cumulative_test_x, cut_by_vendi, idx_test = variance_pruning(
@@ -883,7 +900,6 @@ class ScopeBO:
                     cumulative_train_x = cumulative_train_x,
                     cumulative_train_y = cumulative_train_y,
                     cut_by_vendi = cut_by_vendi)
-    
 
         # BO with fantasy updates.
         acq_modes_list = ["balanced", "explorative", "greedy", "random"]
@@ -904,21 +920,23 @@ class ScopeBO:
                         cumulative_test_x = cumulative_test_x, 
                         cut_by_vendi = cut_by_vendi,
                         full_covariance_matrix=full_covariance_matrix,
-                        df=df, seed = seed)
-                    print(f"Cut {len(cut_by_vendi)} samples from the search space via Vendi pruning.")
+                        df=df,
+                        seed = seed)
+                    print(f"Cut {len(cut_by_vendi)} samples from the search space via Vendi pruning. {len(idx_test)} samples remain.")
 
                 # Instantiate some variables.
                 surrogate_model = None
                 train_x_torch = None
                 test_x_torch = None
 
-                if acquisition_function_mode.lower() != "random":  # no surrogate model needed in case of random selection    
+                # surrogate modeling unless random acquisition function is selected
+                if acquisition_function_mode.lower() != "random":   
                     # Tensors for input data.
                     train_x_torch = torch.tensor(cumulative_train_x).to(**tkwargs).double()
                     test_x_torch = torch.tensor(cumulative_test_x).double().to(**tkwargs)
                     
-
                     individual_models = []
+
                     # Create GP models for each objective.
                     for i in range(0, n_objectives):
                         
@@ -940,7 +958,7 @@ class ScopeBO:
                     if len(individual_models) > 1:
                         surrogate_model = ModelListGP(*individual_models)
                     else:
-                        surrogate_model = individual_models[0]
+                        surrogate_model = individual_models[0]  # model is directly the SingleTaskGP object
             
                 # Instantiate some variables for the acquisition function evaluation.
                 acquisition_function = None 
@@ -949,6 +967,7 @@ class ScopeBO:
                 idx_sample = None
                 list_position_sample = None
 
+                # Balanced acquisition function (exploration-exploitation trade-off -- default behavior).
                 if acquisition_function_mode.lower() == "balanced":
                     if n_objectives > 1:  # Acquisition function for multi-objective optimization (qNoisyEHVI)
 
@@ -957,7 +976,8 @@ class ScopeBO:
                         ref_point = torch.tensor(ref_mins).double().to(**tkwargs)
 
                         # Generate acquisition function object. 
-                        # Warnings ignored because it automatically generated a non-consequential numerical warning for added jitter of ca. 10^-8 otherwise.
+                        # Warnings ignored because it automatically generated a non-consequential numerical warning 
+                        # for added jitter of ca. 10^-8 otherwise.
                         with HiddenPrints():  
                             acquisition_function = qNoisyExpectedHypervolumeImprovement(
                                 model=surrogate_model, sampler=sampler,
@@ -966,8 +986,8 @@ class ScopeBO:
                             )
 
                     else:  # Acquisition function for single-objective optimization (qEI)
-
-                        # Generate acquisition function object. Warnings ignored because it automatically generated a numerical warning for added jitter of ca. 10^-8 otherwise.
+                        # Generate acquisition function object. Warnings ignored because it automatically generated 
+                        # a numerical warning for added jitter of ca. 10^-8 otherwise.
                         with HiddenPrints():
                             train_y_torch = torch.tensor(cumulative_train_y).to(**tkwargs).double()
                             best_value = train_y_torch.max()
@@ -1011,7 +1031,7 @@ class ScopeBO:
                                     sample_dist = current_dist
                                     list_position_sample = idx
 
-                        # Get the sample index and save it. Update other variables for the batch fantasy.
+                        # Get the sample index and save it.
                         idx_sample = idx_test[list_position_sample]
                         
                         # Save the best sample. Update the batch fantasy.
@@ -1052,7 +1072,7 @@ class ScopeBO:
                     cumulative_train_x.append(popped_sample)
                     best_samples.append(idx_sample[0])
 
-                # Exploitative acquisition function. Only implemented for benchmarking and single objective runs.
+                # Exploitative acquisition function. Implemented for benchmarking.
                 if acquisition_function_mode.lower() == "greedy":
                     
                     acquisition_samples = 1
@@ -1065,11 +1085,11 @@ class ScopeBO:
                             acquisition_samples = 6
 
                     # run the acquisition function
-                    if n_objectives == 1:
+                    if n_objectives == 1:  # single objective greedy run
                         idx_sample, sample, list_position_sample = greedy_run(
                             surrogate_model=surrogate_model, q=acquisition_samples, objective_weights=objective_weights,
                             idx_test=idx_test, test_x_torch=test_x_torch)
-                    else:
+                    else:  # multi-objective greedy run
                         idx_sample, sample, list_position_sample = hypervolume_improvement(
                             surrogate_model=surrogate_model, q=acquisition_samples, objective_weights=objective_weights,
                             cumulative_train_y=cumulative_train_y,idx_test=idx_test, test_x_torch=test_x_torch)
@@ -1084,7 +1104,8 @@ class ScopeBO:
                         for sample in idx_sample[1:]:  # the first entry of the list is the actual suggestion, the rest are the alternatives
                             next_samples.append(sample)
    
-                if (acquisition_function_mode.lower() != "random") and (batch_exp != batch -1):  # no fantasy prediction needed in case of random acq. fct.
+                # Update the fantasy with the predicted value for the selected sample.
+                if (acquisition_function_mode.lower() != "random") and (batch_exp != batch -1):
                     # Get the yield prediction for the suggested sample and save it for the fantasy.
                     y_pred = surrogate_model.posterior(
                         torch.tensor(sample)).mean.detach().numpy()[0].tolist()
@@ -1113,7 +1134,7 @@ class ScopeBO:
             else:
                 print("The input variable sample_threshold must either be numeric or a tuple. Please check your input!")
             
-            if (sample_cutoff is None) or (sample_cutoff >= (len(idx_train))-3):  # minus 3 because the three samples from this run have already been added to idx_train
+            if (sample_cutoff is None) or (sample_cutoff >= (len(idx_train))-3):  # minus 3 because this run's samples have already been added to idx_train
 
                 # calculate the pairwise Vendi scores of the pruned samples and remove those that are too similar to each other
                 # generate pairs out of the suggested samples
@@ -1125,7 +1146,9 @@ class ScopeBO:
                 df_pairwise = pd.DataFrame(dict_pairwise)
                 
                 # calculate the pairwise Vendi scores
-                df_pairwise["Vendi score"] = [calculate_vendi_score(idx_num=[df_pairwise.loc[round,"idx_num1"],df_pairwise.loc[round,"idx_num2"]],covariance_matrix=self.full_covariance_matrix) for round in df_pairwise.index]
+                df_pairwise["Vendi score"] = [calculate_vendi_score(idx_num=[df_pairwise.loc[round,"idx_num1"],
+                                                                             df_pairwise.loc[round,"idx_num2"]],
+                                                                    covariance_matrix=self.full_covariance_matrix) for round in df_pairwise.index]
 
                 # remove the 2nd sample in pairs that have a Vendi score below a certain value (empirically determined as 1.15)
                 # as the samples were sorted with decreasing acquisition function priority, the 1st sample has higher priority and is kept
