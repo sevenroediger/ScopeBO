@@ -19,9 +19,8 @@ from rdkit.Chem import AllChem
 import seaborn as sns
 from adjustText import adjust_text
 
-from scripts.predictor  import ScopeBO
-from scripts.utils import calculate_vendi_score, obtain_full_covar_matrix
-
+from .predictor  import ScopeBO
+from .utils import calculate_vendi_score, obtain_full_covar_matrix
 
 # General plt parameters
 plt.rcParams.update({
@@ -41,7 +40,6 @@ class HiddenPrints:
         self._original_stdout = sys.stdout
         sys.stdout = open(os.devnull, 'w')
 
-
     def __exit__(self, exc_type, exc_val, exc_tb):
         sys.stdout.close()
         sys.stdout = self._original_stdout
@@ -56,6 +54,7 @@ class Benchmark:
             main functionality for running scopes
         change_featurization:
             recalculating Vendi scores in existing benchmark data with a different featurization
+            (essentially creates a new scope run folde with these updated values)
 
     Functions for data analysis:
         heatmap plot:
@@ -65,12 +64,13 @@ class Benchmark:
         track_samples:
             visualize the selected samples on a UMAP
         show_scope:
-            draw the selected compounds
+            draw the structures of the selected compounds
         feature_analysis:
             SHAP analysis of the surrogate model for a scope
         objective_distribution:
             analyze the distribution of objective values in a scope
         get_metric_overview:
+            collect the different metrics for all scopes in a benchmark folder (all random seeds)
 
 
     Utility functions:
@@ -87,14 +87,12 @@ class Benchmark:
 
     """
 
-
     def __init__(self):
         
         # Define colormaps for plotting
-
         doyle_colors = ["#CE4C6F", "#1561C2", "#188F9D","#C4ADA2","#515798", "#CB7D85", "#A9A9A9"]
+        
         # extension of palette with lighter and darker versions
-
         lighter = [self._adjust_lightness(c, 1.2) for c in doyle_colors]
         darker  = [self._adjust_lightness(c, 0.7) for c in doyle_colors]
         self.all_colors = doyle_colors + darker[::-1] + lighter[::-1] 
@@ -129,7 +127,7 @@ class Benchmark:
             objective_weights = None, sample_threshold = None, enforce_dissimilarity=False, pruning_metric = "vendi_batch", 
             acquisition_function_mode = 'balanced', dft_filename = None, filename_prediction = "df_benchmark.csv", directory='.'):
         """
-        Runs the function for selected parameter ranges and records the results per round for each set of parameters.
+        Runs the ScopeBO.run function for selected parameter ranges and records the results per round for each set of parameters.
 
         Returns a number of csv files in a folder with the name name_results:
             Raw results:
@@ -168,26 +166,16 @@ class Benchmark:
 
         filename_labelled: string
             name of the csv file with the labelled data
-        filename_prediction: string
-            name of the csv file in which the benchmark dataframe is saved
-            Default: "df_benchmark.csv"
         objective: list
             list indicating the column name for the objective (string)
-        budget: int
-            experimental budget
-        init_sampling_method: str
-            sampling method. Options:
-                "random": random selection
-                "cvt": CVT sampling
-                "lhs": LHS sampling
-        batches: list
-            list of batch sizes (as int numbers)
-        seeds: int
-            number of different random seeds to be evaluate (will use range(seeds))
-            Default is 40.
+        name_results: str
+            name of the folder in which the results will be saved
         specific_seed: int or None
             Ignored if None (default).
             If specified, will only run the given random seed (overwriting variable seeds).
+        seeds: int
+            number of different random seeds to be evaluate (will use range(seeds))
+            Default is 40.
         idx_to_keep: list or None
             list of indices of the labelled dataframe which won't be removed at the beginning of the scope run
             Enables to "hot-start" a scope with prior data.
@@ -197,19 +185,65 @@ class Benchmark:
             Provide dict with value "min" in case of a minimization task (e. g. {"cost":"min"})
             Code will assume maximization for all non-listed objectives
             Default is {"all_obj":"max"} --> all objectives are maximized   
-        name_results: str
-            name of the folder in which the results will be saved
+        init_sampling_method: str
+            sampling method. Options:
+                "random": random selection (default)
+                "cvt": CVT sampling
+                "lhs": LHS sampling
         Vendi_pruning_fractions: list
-            list of threshold values for the Vendi cutoff (floats)  
+            list of threshold values for the Vendi cutoff (ints)
+            Default: [13]  
+        batches: list
+            list of batch sizes (as int numbers)
+            Default: [3]
+        budget: int
+            experimental budget
+            Default: 27
+        objective_weights: list or None
+            list of float weights for the scalarization of the objectives 
+            only relevant for multi-objective greedy runs, not other acquisition functions
+            Default: None (objectives will be averaged)
+        sample_threshold: float, tuple, or None
+            Numeric threshold for a minimum pairwise Vendi score between two samples in a batch.
+            If a tuple is provided, the first value is the Vendi score threshold 
+            and the second value is the minimum number of prior samples needed for the pruning to be applied.
+            Default is None (no thresholding).
+            This option was explored during development, but not used in the final version of ScopeBO 
+            and is only implemented for legacy reasons.
+        enforce_dissimilarity: Boolean
+            If True, removes all samples from the search space in each batch that have a pairwise 
+            Vendi score below 1.06 to any of the previously selected samples.
+            Default is False.
+            This option was explored during development, but not used in the final version of ScopeBO 
+            and is only implemented for legacy reasons.
+        pruning_metric: str
+            Mode used for the pruning.
+            Options:
+                "vendi_batch": pruning by vendi scores before every round of experiments (default - optimized settings).
+                "vendi_sample": pruning by vendi score before every sample.
+                "variance": pruning by surrogate model variance (implemented only for benchmarking purposes).
+        acquisition_function_mode: str
+            Choose the acqusition function.
+            Options:
+                "balanced" (Default): exploration-exploitation trade-off via qExpectedImprovement (1 objective) 
+                                                                          or qNoisyExpectedHypervolumeImprovement (multi-objective)
+                "greedy": pure exploitative selection
+                "explorative": pure explorative selection
+                "random": random selection
         dft_filename: None or str
             name of the file containing the dft-featurized reaction space for the vendi score calculation
             only has to be given if the substrate encoding is not dft-derived (e. g. Mordred or Rdkit featurization)
             NOTE: only implemented for mono-objective cases
             Default: None
+        filename_prediction: str
+            name of the csv file in which the benchmark dataframe is saved
+            Default: "df_benchmark.csv"
+        directory: str
+            working directory (default is current directory)
         """
         
-        wdir = Path(directory)
         # Create the results folder and the folder for raw results.
+        wdir = Path(directory)
         if not os.path.exists(wdir.joinpath(name_results)):
             # Create the folder
             os.makedirs(wdir.joinpath(name_results))
@@ -232,24 +266,22 @@ class Benchmark:
         else:
             df_unlabelled.drop(columns=objectives,inplace=True)
 
-        # Instantiate empty df for the analyzed results.
+        # Set up the Vendi pruning fraction and batch size names for the results dataframes.
         Vendi_names = []
         for Vpf in Vendi_pruning_fractions:
             if type(Vpf) is list:
                 rounded_Vpf = [round(el,1) if type(el) is float else el for el in Vpf]
                 Vendi_names.append("-".join(map(str,rounded_Vpf)))
-            elif Vpf is None:
-                Vendi_names.append("11-39-39-11-11-11-11")
             else:
                 Vendi_names.append(str(Vpf))
         batch_names = []
         for batch in batches:
             if type(batch) is list:
                 batch_names.append("-".join(map(str,batch)))
-            elif batch is None:
-                batch_names.append("4-1-1-4-5-5-5")
             else:
                 batch_names.append(str(batch))
+
+        # Instantiate empty df for the analyzed results.
         df_obj_av = pd.DataFrame(None,batch_names,Vendi_names)
         df_obj_stdev = pd.DataFrame(None,batch_names,Vendi_names)
         dfs_indiv_obj_av = None
@@ -289,7 +321,9 @@ class Benchmark:
         if specific_seed is not None:
             seeds_to_test = [specific_seed]
 
-        total_runs = len(batches) * len(Vendi_pruning_fractions) * len(seeds_to_test)  # same
+        total_runs = len(batches) * len(Vendi_pruning_fractions) * len(seeds_to_test)
+
+        # Loop through all combinations of batch sizes, Vendi pruning fractions, and random seeds.
         for batch in batches: 
             for Vpf in Vendi_pruning_fractions:
                 
@@ -311,10 +345,8 @@ class Benchmark:
                     if type(batch) is list:
                         rounds = len(batch)
                     else:
-                        if batch is None:
-                            rounds = 7  # value using optimized conditions
-                        elif budget % batch != 0:
-                            rounds = int(budget/batch)+1 # extra round with reduced batch size for last run (will be reduced below)
+                        if budget % batch != 0:
+                            rounds = int(budget/batch)+1  # extra round with reduced batch size for last run (will be reduced below)
                         
                         else:
                             rounds = int(budget/batch)
@@ -322,32 +354,25 @@ class Benchmark:
                     # Run ScopeBO for these settings.
                     for current_round in range(rounds):
                             
-                        # check if the batch sie is dynamic (meaning different batch sizes for each rounds)
+                        # check if the batch size is dynamic (meaning different batch sizes for each rounds)
                         current_batch = None
                         if type(batch) is list:
                             current_batch = batch[current_round]
                         else:
                             current_batch = batch
                             # Check if this will be a run with reduced batch size (due to the set budget).
-                            if batch is not None:
-                                if current_round+1 == rounds and budget % batch != 0:
-                                    current_batch = budget % batch
+                            if current_round+1 == rounds and budget % batch != 0:
+                                current_batch = budget % batch
 
                         # Check if the Vendi_pruning_fraction is dynamic (meaning different fractions for each round)
                         this_Vendi_pruning_fraction = Vpf
                         if type(Vpf) is list:
                             this_Vendi_pruning_fraction = Vpf[current_round]
 
-                        # assign labels for the printout
+                        # assign labels for the print-out
                         batch_label = batch
                         Vpf_label = this_Vendi_pruning_fraction
                         current_batch_label = current_batch
-                        if batch is None:
-                            batch_label = "default"
-                            batch_sizes_default = [4,1,1,4,5,5,5]
-                            current_batch_label = batch_sizes_default[current_round]
-                        if this_Vendi_pruning_fraction is None:
-                            Vpf_label = "default"
 
                         print(f"Now running Batch size: {batch_label}, Vendi_pruning_fraction: {Vpf_label}, Seed: {seed}, Round: {current_round}, current batch: {current_batch_label}")
                         with HiddenPrints():
@@ -503,14 +528,17 @@ class Benchmark:
             Path to the CSV file containing the labelled dataset with the new features.
         name_results : str
             Path to the folder containing the original results.
+        cov_mat : np.ndarray, optional
+            Covariance matrix to be used for the Vendi score calculation.
+            If None (default), the covariance matrix will be calculated from the labelled data.
         directory : str
             Working directory.
 
         Returns
         -------
         None
-            Saves recalculated raw data files with updated ``Vendi_score`` columns in a 
-            new folder named ``<name_results>_<name_feat>_feat/raw_data``.
+            Saves recalculated raw data files with updated "Vendi_score" columns in a 
+            new folder named "<name_results>_<name_feat>_feat/raw_data".
         """
 
         # create a folder where the results can be saved
@@ -523,6 +551,7 @@ class Benchmark:
 
         # read in the featurization that will be used for the Vendi score calculation
         df_labelled = pd.read_csv(wdir / filename_labelled,index_col=0,header=0)
+
         # sort it by index
         df_labelled.sort_index(inplace=True)
 
@@ -582,10 +611,12 @@ class Benchmark:
             print(f"Recalculated the Vendi scores in the file {file} (using {name_feat} featurization).")
 
 
-    def heatmap_plot(self,type_results, name_results, budget, scope_method = "product",objective_mode = {"all_obj":"max"}, objective_weights=None,
-                    bounds = {"rate":(2.349,1.035),"vendi":(6.366,1.941)},filename=None, show_plot=True,directory = '.'):
+    def heatmap_plot(self, type_results, name_results, budget, scope_method = "product", 
+                    objective_mode = {"all_obj":"max"}, objective_weights = None,
+                    bounds = {"rate": (2.349,1.035), "vendi": (6.366,1.941)}, 
+                    filename = None, show_plot = True, directory = '.'):
         """
-        Generates and saves a heatmap plot for the requested result type across different batch sizes and Vendi_pruning_fractions.
+        Generates and saves a heatmap plot for the requested result type (if requested) across different batch sizes and Vendi_pruning_fractions.
         Options for displayed results: scope score ("scope"), vendi score ("vendi"), weighted objectives ("objectives", normalized if multiple objectives),
         or individual objectives displayed by their respective name.
         ---------------------------------------------------------------------------------------------------------
@@ -625,7 +656,6 @@ class Benchmark:
 
         wdir = Path(directory)
         
-        
         # Get the overview for the requested data
         dfs_scaled,_ = self.get_metric_overview(bounds, budget, name_results, type_results, scope_method, objective_mode,
                         objective_weights, directory)
@@ -645,7 +675,7 @@ class Benchmark:
                 df_heatmap.loc[batch,pruning] = means.loc[budget,f"b{batch}_V{pruning}"]
 
         if show_plot:
-            # Generate and save the heatmap plot.
+            # Generate and save the heatmap plot if it was requested.
             plt.figure(figsize=(10,3))
             if type_results == "comb_obj":
                 type_results = "Combined objective"
@@ -660,13 +690,13 @@ class Benchmark:
         return df_heatmap
     
 
-    def progress_plot(self,budget,type_results, name_results, scope_method= "product", objective_mode = {"all_obj":"max"},
-                        objective_weights=None, bounds = {"rate":(2.349,1.035),"vendi":(6.366,1.941)},filename_figure = None, 
-                        directory=".",show_plot=True,show_stats=None, specified_batch_size = None):
+    def progress_plot(self, budget, type_results, name_results, scope_method = "product", objective_mode = {"all_obj": "max"},
+                        objective_weights = None, bounds = {"rate": (2.349,1.035), "vendi": (6.366,1.941)}, filename_figure = None, 
+                        directory = ".", show_plot = True, show_stats = None, specified_batch_size = None):
             """
-            Generates a result(number of experimenst) y(x)-plot for the requested results.
+            Generates a result(number of experiments) y(x)-plot for the requested results.
             Options for displayed results: scope score ("scope"), vendi score ("vendi"), weighted objectives ("objective", normalized if multiple objectives),
-            or individual objectives displayed by their respective name.
+            or individual objectives requested by their respective name.
 
             Inputs:   
                 budget: int
@@ -708,7 +738,7 @@ class Benchmark:
                         "min-max": Max and Min values.
                     Default is None.
                 specified_batch_size: int or None
-                    the code normally infers the batch size from the filename. If a file is name anormally
+                    the code normally infers the batch size from the filename. If a file is name anormal
                     so that this is not possible, the batch size can be specified with this variable.
                     Default is None --> infer the batch size from the filename
             """
@@ -766,12 +796,12 @@ class Benchmark:
             return dfs_scaled  # return the data
 
 
-    def track_samples(self,filename_umap, filename_data,name_results,scope_method="product", 
-                      objective_mode = {"all_obj":"max"}, objective_weights=None, obj_plot_bounds = None, cbar_scaling = None, cbar_title = None,
-                      bounds = {"rate":(2.349,1.035),"vendi":(6.366,1.941)},display_cut_samples=True, obj_to_display = None, 
-                      dpi = 100, figsize = (10,8), size_scaling = 1, filename_labelled=None, show_colorbar = True,
-                      rounds_to_display = None, label_round=False, filename_figure=None, hide_axis = False,
-                      restrict_samples=None, directory='.'):
+    def track_samples(self, filename_umap, filename_data, name_results, scope_method="product", objective_mode = {"all_obj":"max"},
+                      objective_weights = None, obj_plot_bounds = None, cbar_scaling = None, cbar_title = None,
+                      bounds = {"rate": (2.349,1.035), "vendi": (6.366,1.941)}, display_cut_samples = True, obj_to_display = None, 
+                      dpi = 100, figsize = (10,8), size_scaling = 1, filename_labelled = None, show_colorbar = True,
+                      rounds_to_display = None, label_round = False, filename_figure = None, hide_axis = False,
+                      restrict_samples = None, directory='.'):
         """
         Visually tracks the evaluated and cut samples of a single benchmarking run on a provided UMAP.
         Saves the generated plot. Also provides the results for the run.
@@ -781,9 +811,6 @@ class Benchmark:
                 name of the file containing the UMAP coordinates
             filename_data: str
                 name of the benchmarking run to be analyzed
-            filename_figure: str or None
-                name for the figure that is generated
-                Default: None --> the figure is not saved
             name_results: str
                 subfolder in which the results are located
             scope_method: str
@@ -837,6 +864,9 @@ class Benchmark:
                 Default is None --> shows all rounds
             label_round: Boolean
                 label the suggested samples by the round of selection. Default = False.
+            filename_figure: str or None
+                name for the figure that is generated
+                If None, the figure will not be saved.
             hide_axis: Boolean
                 hide the axis ticks if True (Default is False).
             restrict_samples: str
@@ -861,7 +891,6 @@ class Benchmark:
             df_space = pd.read_csv(wdir.joinpath(restrict_samples),index_col=0, float_precision = "round_trip")
             # Only keep the samples at are in the search space
             df_umap = df_umap.loc[df_umap.index.intersection(df_space.index)]
-
         
         # Prune the number of rounds if requested
         if rounds_to_display is not None:
@@ -904,7 +933,6 @@ class Benchmark:
             objective_weights = {obj: 1/len(objectives) for obj in objectives}
         av_obj = sum(objective_weights[obj] * dict_obj_av[obj] for obj in objectives)
 
-
         # Scaling the vendi data for the scope score calculation.
         vendi_scaled = self.normalization(score=vendi_score, bounds=bounds["vendi"])
         scope_score  = self.calculate_scope_score(av_obj,vendi_scaled,scope_method)
@@ -924,7 +952,6 @@ class Benchmark:
             if obj_plot_bounds is None:
                 obj_plot_bounds = (max(obj_plot),min(obj_plot))
         else:
-
             obj_plot_name = obj_to_display
             obj_plot = dict_obj_values[obj_plot_name]
             if obj_plot_bounds is None:
@@ -937,7 +964,7 @@ class Benchmark:
                 sample = str(sample.encode().decode('unicode_escape'))
                 df_umap.loc[sample,"status"] = "suggested"
                 df_umap.loc[sample,"round"] = round+1
-                df_umap.loc[sample,obj_plot_name] = obj_plot.pop(0) # this works because samples and objective values are in the same order
+                df_umap.loc[sample,obj_plot_name] = obj_plot.pop(0)  # this works because samples and objective values are in the same order
 
             if display_cut_samples:
                 for sample in df_data.loc[round,"cut_samples"]:
@@ -1050,8 +1077,8 @@ class Benchmark:
             figure.savefig(wdir.joinpath(filename_figure))
             
     
-    def show_scope(self,filename_data,name_results,by_round=True,rounds_to_display=None,common_core=None,
-                   give_data=False,suppress_figure=False,directory='.',molsPerRow=6, scale_values = 1, label_suffix = "", round_values = None):
+    def show_scope(self, filename_data, name_results, by_round = True, rounds_to_display = None, common_core = None,
+                   give_data = False, suppress_figure = False, directory = '.', molsPerRow = 6, scale_values = 1, label_suffix = "", round_values = None):
         """
         Depict the substrates that were selected for the scope.
         NOTE: The function is only implemented for singe-objective scenarios.
@@ -1069,7 +1096,7 @@ class Benchmark:
                 E. g.: rounds_to_display=5 --> first 4 rounds will be displayed
                 Default is None --> shows all rounds
             common_core: str or None
-                string for the common core of the molecules to align them
+                SMARTS string for the common core of the molecules to align them
                 Default: None
             give_data: Boolean
                 return the sample dictionary if True (default: False)
@@ -1077,6 +1104,8 @@ class Benchmark:
                 option to suppress printing of the scope figure (default= False)
             directory: str
                 current directory. Default: "."
+            molsPerRow: int
+                number of molecules per row if by_round is False
             scale_values: int
                 Option to scale the result values (e. g. if yields are given on a [0,1]-scale but should be displayed on [0,100]-scale)
                 Default is 1 (no scaling).
@@ -1093,10 +1122,12 @@ class Benchmark:
 
         # Read in UMAP and data.
         df_data = pd.read_csv(wdir.joinpath(name_results+"/"+filename_data), index_col=0,header=0)
+
         # Prune the number of rounds if requested
         if rounds_to_display is not None:
             df_data = df_data.iloc[:rounds_to_display,:]
         df_data["eval_samples"] = df_data["eval_samples"].apply(lambda x: [y.strip("'") for y in x[1:-1].split(', ')])
+
         # get the objectives
         objectives = ast.literal_eval(df_data.columns[0][11:])
         df_data[f"obj_values {objectives}"] = df_data[f"obj_values {objectives}"].apply(ast.literal_eval)
@@ -1109,6 +1140,7 @@ class Benchmark:
             sample_dict.update(dict(zip(labels, values)))
         
         def _generate_representation(smiles_list):
+            """"Generate aligned 2D representations of molecules from SMILES strings."""
             # Convert to molecules
             mol_list = [Chem.MolFromSmiles(smiles) for smiles in smiles_list]
 
@@ -1128,7 +1160,7 @@ class Benchmark:
 
             return mol_list
         
-        if not suppress_figure:
+        if not suppress_figure:  # only generate the figure if not suppressed
             if by_round:
                 for scope_round in df_data.index:
                     smiles_list = df_data.loc[scope_round,"eval_samples"]
@@ -1259,6 +1291,7 @@ class Benchmark:
             Default is 10.
         norm_axis : int or None
             Max value for the histogram count axis.
+            If None (Default), the axis max value is determined automatically.
         directory : str
             Working directory. Default is current directory.
         print_figure : bool
@@ -1272,7 +1305,6 @@ class Benchmark:
             A dataframe where each row corresponds to one run and each column 
             contains the counts of objective values falling into each bin.
         """
-
 
         wdir = Path(directory)
         raw_path = wdir / name_results / "raw_data"
@@ -1351,12 +1383,12 @@ class Benchmark:
     
 
     @staticmethod
-    def calculate_scope_score(obj_score,vendi_score,method):
+    def calculate_scope_score(obj_score, vendi_score, method = "product"):
         """
         Helper function:
         Calculate the scope score using different calculation methods.
         obj_score, vendi_score: float of the respective scaled score.
-        method: string (Options "average", "product","geometric_mean")
+        method: string (Options "average", "product" (default), "geometric_mean")
         """
         scope_score = None
         if "av" in method.lower():
@@ -1385,10 +1417,13 @@ class Benchmark:
         -------------------
         Input:
             folder_name: path of the folder to be analzyed
+        directory: 
+            working directory
         -------------------
         Returns:
             list of the objectives that were used in this run
         """
+
         wdir = Path(directory)
         # Get a list of the raw files of the run
         raw_path = wdir.joinpath(folder_name+"/raw_data/")
@@ -1405,21 +1440,72 @@ class Benchmark:
                             objective_mode = {"all_obj":"max"}, objective_weights = None, directory = ".",
                             specified_batch_size = None):
         """
-        Helper function to calculate a metric overview for the functions progress_plot() and heatmap_plot().
-        See these functions for an overview of the function parameters.
-        Returns a dict of df's with the means (key: "means") and standard deviation (key: "stdev") of the requested metric.
-        Also returns the name of the type of the results (type_results: str).
+        Compute a metric summary across seeds and hyperparameter settings for use in
+        different plotting functions.
 
-        The dataframes in the dict have the following structure:
-            setting1    setting2    ...
-        1   score       nan
-        2   score       score
-        3   score       nan
-        4   score       score
+        This function aggregates raw result files produced by optimization runs,
+        groups them by hyperparameter combinations, extracts objective values and
+        Vendi scores, converts round-level metrics into cumulative metrics, and
+        computes mean, standard deviation, min, and max across seeds. It also
+        constructs per-seed raw DataFrames and aligns results to the evaluation
+        budget.
 
-        The indices are the scope sizes and 
+        Parameters
+        ----------
+        bounds: dict
+            dictionary of bounds for the individual metrics (vendi, all objectives)
+            the dict keys are the metric, the values are a tuple of max and min values
+        budget : int
+            experimental budget
+        name_results: str
+            name of the folder in which the results will be saved
+                type_results: str
+                    Requested type of result.
+                    Options:
+                        "vendi": Vendi score
+                        "objective": average objective values
+                        "scope": scope score
+                        You can also provide the name of a specific objective for that run and then it will only analyze that one.
+            If multiple objectives are present and "objective" is requested,
+            a combined objective score is computed.
+        scope_method: str
+            method to calculate the scope score ("average","product" (Default),"geometric_mean" )
+        objective_mode: dict
+            Dictionary of objective modes for objectives
+            Provide dict with value "min" in case of a minimization task (e. g. {"cost":"min"})
+            Code will assume maximization for all non-listed objectives
+            Default is {"all_obj":"max"} --> all objectives are maximized   
+        objective_weights: list or None
+            list of float weights for the scalarization of the objectives 
+            only relevant for multi-objective greedy runs, not other acquisition functions
+            Default: None (objectives will be averaged)
+        directory: str
+            working directory (default is current directory)
+        specified_batch_size : int or None, optional
+            If provided, each round is assumed to use this fixed batch size.
+            If None, batch sizes are inferred from the hyperparameter setting
+            encoded in the filename.
 
-        # NOTE: finish doc string
+        Returns
+        -------
+        dfs_scaled : dict of pandas.DataFrame
+            Summary dataframes for the requested metric, aggregated across seeds:
+            - "means" (mean values)
+            - "stdev" (standard deviation with Bessel correction)
+            - "max" (max values)
+            - "min" (min values) 
+            Each DataFrame has:
+                - rows indexed by experiment number (1..budget)
+                - columns indexed by hyperparameter combinations
+
+        dict_dfs_raw_data : dict of dict of pandas.DataFrame
+            Nested dictionary:
+            - Outer key: hyperparameter combination
+            - Inner key: seed index
+            - Inner value: raw per-seed DataFrame containing cumulative objective
+            values, Vendi scores, combined objectives, and scope scores (where applicable).
+
+        NOTE: Files must follow the naming convention "<prefix>_<batch>_<setting>_s<seed>.csv"  
         """
 
         # get all the raw files and sort them by hyperparameter combination
@@ -1445,9 +1531,8 @@ class Benchmark:
         dict_unscaled_max = {}
         dict_unscaled_min = {}
         dict_dfs_raw_data = {}
-
-
         for combi in setting_dict.keys():
+
             # list to store the results of all seeds for one setting
             seeded_list = []
             seeds = len(setting_dict[combi])
@@ -1457,15 +1542,17 @@ class Benchmark:
 
             # Regex to extract seed number
             seed_pattern = re.compile(r's(\d+)\.csv$')
-            # Sort the files
+            # Sort the files by their random seed
             sorted_files = sorted(setting_dict[combi], key=lambda x: int(seed_pattern.search(x).group(1)))
 
+            # loop through the individual seeds
             for seed_file in sorted_files:
 
                 # get lists of the values in each round for each objective and the vendi score (for one seed)
                 dict_raw_data = {}
                 batch_sizes = None
 
+                # read in the raw data
                 df_raw = pd.read_csv(f"{raw_path}/{seed_file}",index_col=0,header=0)
                 df_raw[f"obj_values {objectives}"] = df_raw[f"obj_values {objectives}"].apply(lambda x: ast.literal_eval(x))
 
@@ -1590,14 +1677,12 @@ class Benchmark:
         dict_unscaled_max = {k: v + [np.nan] * (max_len - len(v)) for k, v in dict_unscaled_max.items()}
         dict_unscaled_min = {k: v + [np.nan] * (max_len - len(v)) for k, v in dict_unscaled_min.items()}
 
-
         # convert to dfs
         dfs_unscaled = {}
         dfs_unscaled["means"] = pd.DataFrame.from_dict(dict_unscaled_mean)
         dfs_unscaled["stdev"] = pd.DataFrame.from_dict(dict_unscaled_stdev)
         dfs_unscaled["max"] = pd.DataFrame.from_dict(dict_unscaled_max)
         dfs_unscaled["min"] = pd.DataFrame.from_dict(dict_unscaled_min)
-
 
         #  The data is currently shown per batch (which can be different for the different runs). Still needs to be "scaled" to the number of experiments. 
         dfs_scaled = {}
