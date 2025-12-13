@@ -171,17 +171,17 @@ def regression_modeling(filename, objective,
             for comb, _ in inn_train_models:
                 model = LinearRegression().fit(X_train_inn_sc[comb], y_train_inn)
                 y_val_pred = model.predict(X_val_sc[comb])
-                rsme = np.sqrt(mean_squared_error(y_val, y_val_pred))
+                rmse = np.sqrt(mean_squared_error(y_val, y_val_pred))
                 # record the features and rmse
-                inn_cv_models[tuple(comb)].append(rsme)
+                inn_cv_models[tuple(comb)].append(rmse)
 
             # current inner fold finished - update tqdm
             pbar.update(1)
 
-        # average rsme for each feature comb selected by the inner cv models
+        # average rmse for each feature comb selected by the inner cv models
         best_inn_models = {k: np.mean(v) for k, v in inn_cv_models.items()}
 
-        # get the features with lowest mean rsme (inner CV champion)
+        # get the features with lowest mean rmse (inner CV champion)
         best_inn_model_feat = list(min(best_inn_models, key=best_inn_models.get))
 
         # fit a scaler on the outer train and scale it
@@ -225,9 +225,9 @@ def regression_modeling(filename, objective,
     champion_feat = None
     if len(most_freq) == 1:  # clear winner
         champion_feat = most_freq[0]
-    else:  # test_rsme tie-breaker
-        rsme_vals = [best_out_models[mod][3] for mod in most_freq]  # test_rsme is 4th tuple entry (0-indexed)
-        top_idx = rsme_vals.index(min(rsme_vals))
+    else:  # test_rmse tie-breaker
+        rmse_vals = [best_out_models[mod][3] for mod in most_freq]  # test_rmse is 4th tuple entry (0-indexed)
+        top_idx = rmse_vals.index(min(rmse_vals))
         champion_feat = most_freq[top_idx]
     champion_feat = list(champion_feat)
 
