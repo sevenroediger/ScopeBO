@@ -1,6 +1,6 @@
 # ScopeBO
 
-A scope selection tool for organic chemistry that balances scope performance and substrate similarity.
+A scope selection tool for organic chemistry that balances scope performance and substrate similarity. Check out [our preprint](https://chemrxiv.org/engage/chemrxiv/article-details/6940776cbc44e47cf412790c) for more information!
 
 * Get scope substrate suggestions
 
