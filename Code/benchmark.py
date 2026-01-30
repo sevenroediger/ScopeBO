@@ -515,7 +515,7 @@ class Benchmark:
 
 
     @staticmethod
-    def change_featurization(name_feat, filename_labelled, name_results, cov_mat = None, directory = "."):
+    def change_featurization(name_feat, filename_labelled, name_results, new_folder_name = None, cov_mat = None, directory = "."):
         """
         Recalculate Vendi scores for scopes using an alternative featurization.
         Generates a new folder with recalculated raw data files containing updated ``Vendi_score`` columns.
@@ -528,6 +528,9 @@ class Benchmark:
             Path to the CSV file containing the labelled dataset with the new features.
         name_results : str
             Path to the folder containing the original results.
+        new_folder_name: str or None
+            Path to the folder where the results will be saved.
+            If None is given, the folder will be named automatically (see Returns section).
         cov_mat : np.ndarray, optional
             Covariance matrix to be used for the Vendi score calculation.
             If None (default), the covariance matrix will be calculated from the labelled data.
@@ -538,7 +541,8 @@ class Benchmark:
         -------
         None
             Saves recalculated raw data files with updated "Vendi_score" columns in a 
-            new folder named "<name_results>_<name_feat>_feat/raw_data".
+            new folder named "<name_results>_<name_feat>_feat/raw_data" 
+            (or as indicated by the variable new_folder_name).
         """
 
         # create a folder where the results can be saved
@@ -546,7 +550,9 @@ class Benchmark:
         results_path = wdir / name_results
         raw_path = results_path / "raw_data"
         feat_path = results_path.parent / f"{results_path.name}_{name_feat}_feat/raw_data"
-        feat_path.mkdir(parents=True, exist_ok=True)
+        if new_folder_name is not None:
+            feat_path = Path(new_folder_name)
+        feat_path.mkdir(parents=True, exist_ok=True)  # ensure that the results folder exists
 
 
         # read in the featurization that will be used for the Vendi score calculation

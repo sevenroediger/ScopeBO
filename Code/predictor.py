@@ -314,6 +314,8 @@ class ScopeBO:
                 obj_bounds = None,
                 objectives = None,
                 display_cut_samples = True,
+                display_suggestions = True,
+                display_alternatives = True,
                 figsize = (10,8),
                 dpi = 600,
                 draw_structures = True,
@@ -323,7 +325,6 @@ class ScopeBO:
                 directory = "."):
         """
         Creates a UMAP for the search space, highlighting the picked samples.
-        Optionally returns dataframes for seen, unseen neutral and unseen cut samples.
         ----------
         filename : str or Path
             Path to the CSV file containing the reaction search space.
@@ -334,11 +335,18 @@ class ScopeBO:
             (max, min) values to manually set the colorbar range for `obj_to_show`.
             If None, the min/max are taken from the observed evaluated samples.
         objectives : list-like, optional
-            List of column names containing objective values.
+            List of column names containing objective values (including "PENDING").
             If None, they are automatically inferred from columns containing
-            "PENDING" strings as values.
+            "PENDING" strings.
         display_cut_samples : bool, default=True
             Whether cut samples (priority = -1) are shown as X markers.
+            If False, they are plotted as unseen points.
+        display_suggestions: bool, default=True
+            Whether suggested samples (priority=1) are shown as squares.
+            If Ffalse, they are plotted as unseen points.
+        display_alternatives: bool, default=True
+            Whether alternatively suggested samples (0<priority<1) are shown as diamonds.
+            Decreasing size indicates decreasing priority.
             If False, they are plotted as unseen points.
         figsize : tuple, default=(10, 8)
             Size of the generated UMAP figure in inches.
@@ -355,7 +363,6 @@ class ScopeBO:
                 - seen     (evaluated samples)
                 - neutral  (unseen priority = 0)
                 - cut      (unseen priority = -1)
-                samples.
         directory : str or Path, default="."
             Directory containing the CSV file.
         """
@@ -363,6 +370,7 @@ class ScopeBO:
         # Call the function from visualize.py
         df_dict = UMAP_view(filename=filename, obj_to_show=obj_to_show, obj_bounds=obj_bounds,
                             objectives=objectives, display_cut_samples=display_cut_samples,
+                            display_suggestions=display_suggestions, display_alternatives=display_alternatives,
                             figsize=figsize, dpi=dpi, show_figure=show_figure, cbar_title=cbar_title,
                             return_dfs=return_dfs, directory=directory, draw_structures=draw_structures)
 

@@ -32,6 +32,8 @@ def UMAP_view(filename,
               obj_bounds = None,
               objectives = None,
               display_cut_samples = True,
+              display_suggestions = True,
+              display_alternatives = True,
               figsize = (10,8),
               dpi = 600,
               draw_structures = True,
@@ -57,6 +59,13 @@ def UMAP_view(filename,
     display_cut_samples : bool, default=True
         Whether cut samples (priority = -1) are shown as X markers.
         If False, they are plotted as unseen points.
+    display_suggestions: bool, default=True
+        Whether suggested samples (priority=1) are shown as squares.
+        If Ffalse, they are plotted as unseen points.
+    display_alternatives: bool, default=True
+        Whether alternatively suggested samples (0<priority<1) are shown as diamonds.
+        Decreasing size indicates decreasing priority.
+        If False, they are plotted as unseen points.
     figsize : tuple, default=(10, 8)
         Size of the generated UMAP figure in inches.
     dpi : int, default=600
@@ -81,6 +90,7 @@ def UMAP_view(filename,
 
     # read the results file
     df_scope = pd.read_csv(wdir / filename, index_col=0, header=0)
+    df_scope.sort_index(inplace=True)
     df_scope["priority"] = df_scope["priority"].astype(float)
 
     # identify the objectives (containing PENDING entries) if none are given
@@ -93,7 +103,7 @@ def UMAP_view(filename,
     
     # scale the featurization data
     df_scaled = df_scope.copy(deep=True)
-    df_scaled.drop(columns=objectives, inplace=True)
+    df_scaled.drop(columns=objectives + ["priority"], inplace=True)
     df_scaled = pd.DataFrame(scale(df_scaled),
                              df_scaled.index,
                              df_scaled.columns)
@@ -120,6 +130,9 @@ def UMAP_view(filename,
 
     df_neutral = df_unseen[df_unseen["priority"] == 0].copy()
     df_cut = df_unseen[df_unseen["priority"] == -1].copy()
+    df_sugg = df_unseen[df_unseen["priority"] == 1].copy()  # suggested samples
+    mask = (df_unseen["priority"] > 0) & (df_unseen["priority"] < 1)
+    df_alt = df_unseen[mask].copy()  # alternative suggestions
 
     # draw the structures if requested
     if draw_structures:
@@ -146,7 +159,17 @@ def UMAP_view(filename,
 
     # print the UMAP if requested
     if show_figure:
-        print("UMAP projection of the reaction space (evaluated samples colored, pruned samples marked with X):")
+        print("UMAP projection of the reaction space:")
+        if display_cut_samples:
+            print("(Evaluated samples are shown as colored circles. Pruned samples are marked with X.)")
+        else:
+            print("(Evaluated samples are shown as colored circles.)")
+        if display_suggestions and display_alternatives:
+            print("(Suggested samples are marked with squares and alternative suggestions with diamonds.)")
+        elif display_suggestions and not display_alternatives:
+            print("(Suggested samples are marked with squares.)")
+        elif not display_suggestions and display_alternatives:
+            print("(Alternative suggestions are marked with diamonds.)")
         plt.figure(figsize=figsize, dpi = dpi, constrained_layout = True)
 
         colormap = cont_cmap
@@ -174,11 +197,36 @@ def UMAP_view(filename,
             # plot the cut samples the same way as the neutral samples
             plt.scatter(
                 df_cut["UMAP1"], df_cut["UMAP2"], s=40, edgecolor="k", marker = "o",
-                color=doyle_colors[3], alpha=0.8, linewidth = 0.3, zorder=2)
+                color=doyle_colors[6], alpha=0.8, linewidth = 0.3, zorder=2)
+            
+        # check if suggested samples should be highlighted
+        if display_suggestions:
+            # plot the suggested samples
+            plt.scatter(
+                df_sugg["UMAP1"], df_sugg["UMAP2"], s=100, edgecolor="k", marker = "s",
+                color=doyle_colors[2], alpha=0.8, linewidth = 1.2, zorder=4)
+        else:
+            # plot the cut samples the same way as the neutral samples
+            plt.scatter(
+                df_alt["UMAP1"], df_alt["UMAP2"], s=40, edgecolor="k", marker = "o",
+                color=doyle_colors[6], alpha=0.8, linewidth = 0.3, zorder=1)
+            
+        # check if alternative sugegstions should be highlighted
+        if display_alternatives:
+            # plot the alternative samples
+            plt.scatter(
+                df_alt["UMAP1"], df_alt["UMAP2"], s=100*df_alt["priority"], edgecolor="k", marker = "D",
+                color=doyle_colors[2], alpha=0.8, linewidth = 1.2, zorder=3)
+        else:
+            # plot the cut samples the same way as the neutral samples
+            plt.scatter(
+                df_alt["UMAP1"], df_alt["UMAP2"], s=40, edgecolor="k", marker = "o",
+                color=doyle_colors[6], alpha=0.8, linewidth = 0.3, zorder=1)
         
         # plot the selected samples
         scatter_numeric = plt.scatter(df_seen["UMAP1"], df_seen["UMAP2"], c=df_seen["labels"],
-                                        cmap=cont_cmap, norm=norm,s=250, alpha=1, edgecolor='k', linewidth=2)
+                                        cmap=cont_cmap, norm=norm,s=250, alpha=1, edgecolor='k', 
+                                        linewidth=2, zorder = 5)
 
         cbar = plt.colorbar(scatter_numeric)
         if cbar_title is None:
