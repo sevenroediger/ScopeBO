@@ -1,0 +1,76 @@
+/* Custom segmented control for reporting modes */
+.scope-mode-switch-wrap {
+  display: flex;
+  justify-content: center;
+}
+
+.scope-mode-switch {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.5rem;
+  max-width: 900px;
+}
+
+.scope-mode-switch .form-check {
+  padding-left: 0;
+  margin: 0;
+}
+
+.scope-mode-switch .scope-mode-option {
+  min-width: 170px;
+  padding: 0.55rem 0.95rem;
+  border: 1px solid #afafaf;
+  border-radius: 999px;
+  background: #f5f7fa;
+  color: #797979;
+  font-size: 0.95rem;
+  font-weight: 600;
+  line-height: 1.2;
+  text-align: center;
+  box-shadow: none;
+  transition: background-color 0.18s ease, color 0.18s ease, border-color 0.18s ease, transform 0.18s ease;
+}
+
+.scope-mode-switch .scope-mode-option:hover {
+  border-color: #1561c2;
+  color: #1561c2;
+  background: #eef4fb;
+}
+
+.scope-mode-switch .btn-check:checked + .scope-mode-option,
+.scope-mode-switch .scope-mode-option.active {
+  background: #1561c2;
+  border-color: #1561c2;
+  color: #ffffff;
+  box-shadow: 0 8px 18px rgba(21, 97, 194, 0.18);
+}
+
+.scope-mode-switch .btn-check:focus + .scope-mode-option {
+  outline: none;
+  box-shadow: 0 0 0 0.2rem rgba(21, 97, 194, 0.2);
+}
+
+@media (max-width: 768px) {
+  .scope-mode-switch {
+    max-width: 100%;
+  }
+
+  .scope-mode-switch .scope-mode-option {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .scope-mode-switch .form-check {
+    width: 100%;
+  }
+}
+
+.help-modal .modal-body a {
+    color: #1561C2;
+}
+
+.help-modal .modal-body a:hover {
+    color: #1561C2;
+    opacity: 0.8;
+}
