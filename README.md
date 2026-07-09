@@ -19,7 +19,8 @@ A scope selection tool for organic chemistry that balances scope performance and
 ### Installation:
 
 (1) Install [Miniconda](https://www.anaconda.com/download/success "Download link").
-    *Note*: We noticed that Anaconda can lead to installation problems due to using a different environment solver.
+
+*Note*: We noticed that Anaconda can sometimes lead to installation problems due to using a different environment solver.
 
 (2) Download this repository.
 
@@ -44,9 +45,9 @@ conda activate scope_bo
 jupyter notebook
 ```
 
-Open the file "ScopeBO_example.ipynb" in the folder "Examples" to see a usage example.
+Open the file [ScopeBO_example.ipynb](https://github.com/doyle-lab-ucla/ScopeBO/blob/main/Examples/ScopeBO_example.ipynb) in the folder "Examples" to see a usage example.
 
-See the file "installation_instructions.txt" for more detailed instructions.
+See the file [installation-instructions.txt](https://github.com/doyle-lab-ucla/ScopeBO/blob/main/installation_instructions.txt) for more detailed instructions.
 
 ---
 
@@ -54,13 +55,17 @@ See the file "installation_instructions.txt" for more detailed instructions.
 
 (1) Before first use: Follow the installation instructions steps 1–4 (see above).
 
-(2) Double-click the app (ScopeBO_App.app on MacOS or ScopeBO_App.bat on Windows).
+(2) Double-click the app (ScopeBO_App.zip on MacOS or ScopeBO_App.bat on Windows).
+
+*Note*: Unpack the zip folder on MacOS by double-clicking and then open the unpacked ScopeBO_App.app.
+
+*Note*: See the file [installation-instructions.txt](https://github.com/doyle-lab-ucla/ScopeBO/blob/main/installation_instructions.txt) for information on opening the app via the terminal or in case of security settings blocking the opening of the app.
+
 
 ---
 
 ### Notes
 
-* See the supporting information of our publication for detailed recommendations regarding search space curation, featurization, etc.
+* See the supporting information of our publication for detailed recommendations regarding search space curation, featurization, etc. This information is also provided in the app via the "?" help buttons.
 
-* The folder "Data" contains all publication data.
-
+* Publication data for our manuscript can be found [here](https://github.com/doyle-lab-ucla/ScopeBO_PublicationData).
