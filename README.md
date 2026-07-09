@@ -45,9 +45,9 @@ conda activate scope_bo
 jupyter notebook
 ```
 
-Open the file [ScopeBO_example.ipynb](https://github.com/doyle-lab-ucla/ScopeBO/blob/main/Examples/ScopeBO_example.ipynb) in the folder "Examples" to see a usage example.
+Open the file [ScopeBO_example.ipynb](https://github.com/sevenroediger/ScopeBO/blob/main/Examples/ScopeBO_example.ipynb) in the folder "Examples" to see a usage example.
 
-See the file [installation-instructions.txt](https://github.com/doyle-lab-ucla/ScopeBO/blob/main/installation_instructions.txt) for more detailed instructions.
+See the file [installation-instructions.txt](https://github.com/sevenroediger/ScopeBO/blob/main/installation_instructions.txt) for more detailed instructions.
 
 ---
 
@@ -59,7 +59,7 @@ See the file [installation-instructions.txt](https://github.com/doyle-lab-ucla/S
 
 *Note*: Unpack the zip folder on MacOS by double-clicking and then open the unpacked ScopeBO_App.app.
 
-*Note*: See the file [installation-instructions.txt](https://github.com/doyle-lab-ucla/ScopeBO/blob/main/installation_instructions.txt) for information on opening the app via the terminal or in case of security settings blocking the opening of the app.
+*Note*: See the file [installation-instructions.txt](https://github.com/sevenroediger/ScopeBO/blob/main/installation_instructions.txt) for information on opening the app via the terminal or in case of security settings blocking the opening of the app.
 
 
 ---
