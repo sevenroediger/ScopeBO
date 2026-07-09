@@ -1,3 +1,4 @@
+SCOPEBO JUPYTER SETUP
 1. Install Anaconda or Miniconda: https://www.anaconda.com/download/success
 
 2. Download the ScopeBo repository from GitHub:
@@ -23,3 +24,29 @@
 
 If you want to open ScopeBO after having installed it, you simply need to open your terminal in the ScopeBO folder and run the commands in steps 5–7.
 Alternatively, you can also use software like Visual Studio Code to run ScopeBO!
+
+----------------------------------------------------------------------
+
+SCOPEBO APP TROUBLESHOOTING
+
+Opening blocked by security settings:
+1. Click "Done" on the security warning.
+2. Open the System settings on your Mac
+    * go to the Apple menu (apple symbol top left of the screen)
+    * select System settings
+    * Go to Privacy&security
+    * Scroll down to Security section
+    * Click Open anyway next to ScopeBO_App
+    * Confirm with your password
+    * Try opening the app again
+
+Opening the app via the terminal (after setting up the environment):
+1. Open the terminal in the subfolder Webapp (see step 3 of the Jupyter setup on how to open terminal in a specific folder)
+2. enter: conda activate scope_bo
+3. enter: python app.py
+
+
+
+
+
+
