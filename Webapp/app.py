@@ -1138,6 +1138,7 @@ def render_tab_content(active_tab, stored_umap_figure, stored_shap_beeswarm_figu
                         dcc.Loading(
                             id="loading-umap-visualization",
                             type="default",
+                            target_components={"visual-umap":"children"},
                             children=html.Div(
                                 html.Div(
                                     id="visual-umap",
@@ -1202,6 +1203,7 @@ def render_tab_content(active_tab, stored_umap_figure, stored_shap_beeswarm_figu
                         dcc.Loading(
                             id="loading-shap",
                             type="default",
+                            target_components={"visual-shap":"children"},
                             children=html.Div(
                                 id="visual-shap",
                                 className="mt-2",
@@ -1251,6 +1253,7 @@ def render_tab_content(active_tab, stored_umap_figure, stored_shap_beeswarm_figu
                         dcc.Loading(
                             id="loading-pred",
                             type="default",
+                            target_components={"visual-pred":"children"},
                             children=html.Div(
                                 id="visual-pred",
                                 className="mt-2",
