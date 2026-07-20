@@ -241,6 +241,7 @@ MODAL_STYLE = {
 app.layout = dbc.Container([
     # Storage components
     dcc.Store(id='store-search-space'),  # stores the working search space file
+    dcc.Store(id='store-backup-name', data=""),  # store to keep track of the name of the last search space backup file
     dcc.Store(id='store-objectives', data = [{"name":"Objective 1", "mode": "max"}]),  # stores the selected objectives for optimization
     dcc.Store(id='store-updated', data=True),  # stores if the search space has been updated since the last ScopeBO run
     dcc.Store(id="store-scope-grid"),  # stores the data for the scope grid visualization (scope table)
@@ -2013,6 +2014,37 @@ def run_scopebo_button(n_clicks, search_space, obj_dict, updated_flag, init_flag
         return dbc.Alert("ScopeBO has been run successfully."\
                          " Suggestions are shown below. ", style=SUCCESS_ALERT_STYLE, dismissable=False), updated_search_space_json, updated_flag, init_flag
     return no_update, no_update, no_update, no_update
+
+
+@callback(
+    Output("store-backup-name", "data"),
+    Input("store-search-space", "data"),
+    State("store-backup-name", "data"),
+)
+def search_space_backup(search_space, old_backup):
+    """
+    Backup the search space to a CSV file whenever it is updated. 
+    The file is saved in the same directory as the app.
+    """
+    if search_space:
+        # read and save the search space as a CSV file with a timestamped filename
+        df_search = pd.read_json(search_space, orient='split')
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        backup_filename = f"scopebo_searchspace_backup_{timestamp}.csv"
+        df_search.to_csv("./../"+backup_filename, index=True)
+        print(f"Search space backed up as {backup_filename}", flush=True)
+
+        # remove the current backup file if it exists and is different from the new backup
+        if old_backup and (old_backup != backup_filename):
+            try:
+                os.remove("./../"+old_backup)
+                print(f"Removed old backup file: {old_backup}", flush=True)
+            except FileNotFoundError:
+                print(f"Old backup file not found for removal: {old_backup}", flush=True)
+
+        return backup_filename  # return the backup filename to store in the dcc.Store
+
+    return no_update
 
 
 ####################################
