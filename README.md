@@ -1,6 +1,6 @@
 # ScopeBO
 
-A scope selection tool for organic chemistry that balances scope performance and substrate similarity. Check out [our preprint](https://chemrxiv.org/engage/chemrxiv/article-details/6940776cbc44e47cf412790c) for more information!
+A scope selection tool for organic chemistry that balances scope performance and substrate similarity. Check out [our publication](https://doi.org/10.1021/jacs.6c10981) for more information!
 
 * Get scope substrate suggestions
 
@@ -13,6 +13,12 @@ A scope selection tool for organic chemistry that balances scope performance and
 * Predictive modeling for unseen substrates outside of the scope
 
 * **ScopeBO is also available as an app (see below)**
+
+---
+
+### Citation
+
+Roediger, S.; Sigman, M. S.; Doyle, A. G. *J. Am. Chem. Soc.* **2026**, *148* (37), 39911–39922.
 
 ---
 
@@ -45,9 +51,9 @@ conda activate scope_bo
 jupyter notebook
 ```
 
-Open the file [ScopeBO_example.ipynb](https://github.com/sevenroediger/ScopeBO/blob/main/Examples/ScopeBO_example.ipynb) in the folder "Examples" to see a usage example.
+Open the file [ScopeBO_example.ipynb](https://github.com/doyle-lab-ucla/ScopeBO/blob/main/Examples/ScopeBO_example.ipynb) in the folder "Examples" to see a usage example.
 
-See the file [installation-instructions.txt](https://github.com/sevenroediger/ScopeBO/blob/main/installation_instructions.txt) for more detailed instructions.
+See the file [installation-instructions.txt](https://github.com/doyle-lab-ucla/ScopeBO/blob/main/installation_instructions.txt) for more detailed instructions.
 
 ---
 
@@ -59,7 +65,7 @@ See the file [installation-instructions.txt](https://github.com/sevenroediger/Sc
 
 *Note*: Unpack the zip folder on MacOS by double-clicking and then open the unpacked ScopeBO_App.app.
 
-*Note*: See the file [installation-instructions.txt](https://github.com/sevenroediger/ScopeBO/blob/main/installation_instructions.txt) for information on opening the app via the terminal or in case of security settings blocking the opening of the app.
+*Note*: See the file [installation-instructions.txt](https://github.com/doyle-lab-ucla/ScopeBO/blob/main/installation_instructions.txt) for information on opening the app via the terminal or in case of security settings blocking the opening of the app.
 
 
 ---
