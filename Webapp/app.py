@@ -317,11 +317,13 @@ app.layout = dbc.Container([
                             html.A(
                                 [
                                     "Roediger, S.; Sigman, M. S.; Doyle, A. G. ",
-                                    html.I("ChemRxiv "),
-                                    html.B("2025"),
-                                    " DOI: 10.26434/chemrxiv-2025-r0sst",
+                                    html.I("JACS "),
+                                    html.B("2026"),
+                                    ", ",
+                                    html.I("148"),
+                                    ", 39911–39922."
                                 ],
-                                href="https://chemrxiv.org/doi/10.26434/chemrxiv-2025-r0sst",
+                                href="https://doi.org/10.1021/jacs.6c10981",
                                 target="_blank",
                                 className="text-white small text-decoration-underline",
                             ),
